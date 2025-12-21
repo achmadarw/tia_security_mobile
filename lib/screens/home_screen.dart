@@ -308,6 +308,80 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildQuickActions() {
+    final user = widget.authService.currentUser;
+    final isAdmin = user?.role == 'admin';
+
+    // Define all quick actions
+    final List<Widget> actions = [
+      _QuickActionCard(
+        icon: Icons.login,
+        label: 'Check In',
+        color: AppColors.success,
+        onTap: () {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Check-in - Coming Soon')),
+          );
+        },
+      ),
+      _QuickActionCard(
+        icon: Icons.logout,
+        label: 'Check Out',
+        color: AppColors.error,
+        onTap: () {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Check-out - Coming Soon')),
+          );
+        },
+      ),
+      _QuickActionCard(
+        icon: Icons.add_photo_alternate,
+        label: 'Laporan',
+        color: AppColors.primary,
+        onTap: () {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Create Report - Coming Soon')),
+          );
+        },
+      ),
+      // Users menu - Admin only
+      if (isAdmin)
+        _QuickActionCard(
+          icon: Icons.people,
+          label: 'Users',
+          color: Colors.purple,
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => UsersScreen(
+                  authService: widget.authService,
+                ),
+              ),
+            );
+          },
+        ),
+      _QuickActionCard(
+        icon: Icons.schedule,
+        label: 'Jadwal',
+        color: Colors.teal,
+        onTap: () {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Schedule - Coming Soon')),
+          );
+        },
+      ),
+      _QuickActionCard(
+        icon: Icons.location_on,
+        label: 'Lokasi',
+        color: Colors.indigo,
+        onTap: () {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Location - Coming Soon')),
+          );
+        },
+      ),
+    ];
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -330,74 +404,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             crossAxisCount: 3,
             mainAxisSpacing: 12,
             crossAxisSpacing: 12,
-            children: [
-              _QuickActionCard(
-                icon: Icons.login,
-                label: 'Check In',
-                color: AppColors.success,
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Check-in - Coming Soon')),
-                  );
-                },
-              ),
-              _QuickActionCard(
-                icon: Icons.logout,
-                label: 'Check Out',
-                color: AppColors.error,
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Check-out - Coming Soon')),
-                  );
-                },
-              ),
-              _QuickActionCard(
-                icon: Icons.add_photo_alternate,
-                label: 'Laporan',
-                color: AppColors.primary,
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                        content: Text('Create Report - Coming Soon')),
-                  );
-                },
-              ),
-              _QuickActionCard(
-                icon: Icons.people,
-                label: 'Users',
-                color: Colors.purple,
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => UsersScreen(
-                        authService: widget.authService,
-                      ),
-                    ),
-                  );
-                },
-              ),
-              _QuickActionCard(
-                icon: Icons.schedule,
-                label: 'Jadwal',
-                color: Colors.teal,
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Schedule - Coming Soon')),
-                  );
-                },
-              ),
-              _QuickActionCard(
-                icon: Icons.location_on,
-                label: 'Lokasi',
-                color: Colors.indigo,
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Location - Coming Soon')),
-                  );
-                },
-              ),
-            ],
+            children: actions,
           ),
         ),
       ],

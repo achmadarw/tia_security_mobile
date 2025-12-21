@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
+import 'package:geolocator/geolocator.dart';
 import '../services/face_detection_service.dart';
 import '../services/face_recognition_service.dart';
 import '../services/auth_service.dart';
@@ -163,7 +164,23 @@ class _FaceLoginScreenState extends State<FaceLoginScreen> {
 
       if (faces.isEmpty) {
         print('[FACE_LOGIN] ERROR: No face detected');
-        _showError('No face detected in captured image');
+        _showError('Wajah tidak terdeteksi\n\n'
+            '• Pastikan wajah Anda terlihat jelas\n'
+            '• Hindari cahaya dari belakang\n'
+            '• Lepas masker/kacamata hitam\n'
+            '• Coba posisi lebih dekat');
+        await Future.delayed(const Duration(seconds: 3));
+        _restartDetection();
+        return;
+      }
+
+      if (faces.length > 1) {
+        print('[FACE_LOGIN] ERROR: Multiple faces detected (${faces.length})');
+        _showError('Terdeteksi ${faces.length} wajah\n\n'
+            '• Hanya 1 orang yang diperbolehkan\n'
+            '• Pastikan tidak ada orang lain di frame\n'
+            '• Coba lagi dengan posisi yang tepat');
+        await Future.delayed(const Duration(seconds: 3));
         _restartDetection();
         return;
       }
@@ -207,15 +224,52 @@ class _FaceLoginScreenState extends State<FaceLoginScreen> {
       }
 
       print('[FACE_LOGIN] Sending to backend for recognition...');
+
+      // Get location
+      Position? position;
+      try {
+        bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+        if (serviceEnabled) {
+          LocationPermission permission = await Geolocator.checkPermission();
+          if (permission == LocationPermission.denied) {
+            permission = await Geolocator.requestPermission();
+          }
+          if (permission == LocationPermission.whileInUse ||
+              permission == LocationPermission.always) {
+            position = await Geolocator.getCurrentPosition(
+              desiredAccuracy: LocationAccuracy.high,
+            ).timeout(const Duration(seconds: 5));
+            print(
+                '[FACE_LOGIN] Location: ${position.latitude}, ${position.longitude}');
+          }
+        }
+      } catch (e) {
+        print('[FACE_LOGIN] Location error (continuing without it): $e');
+      }
+
       // Send to backend for recognition
-      final result = await _faceRecognitionService.loginWithFace(embedding);
+      final result = await _faceRecognitionService.loginWithFace(
+        embedding,
+        latitude: position?.latitude,
+        longitude: position?.longitude,
+      );
       print('[FACE_LOGIN] Backend response: $result');
 
       if (result['success']) {
         print('[FACE_LOGIN] SUCCESS: Login successful!');
+
+        // Get attendance info
+        final attendance = result['attendance'];
+        String attendanceMsg = '';
+        if (attendance != null) {
+          final type = attendance['type'];
+          attendanceMsg =
+              '\n${type == 'check_in' ? '✓ Clock In' : '✓ Clock Out'} recorded';
+        }
+
         // Login successful
         _showSuccess(
-          'Login successful!\nConfidence: ${(result['confidence'] * 100).toStringAsFixed(1)}%',
+          'Login successful!${attendanceMsg}\nConfidence: ${(result['confidence']).toStringAsFixed(1)}%',
         );
 
         // Navigate to home

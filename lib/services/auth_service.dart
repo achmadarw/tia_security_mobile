@@ -55,12 +55,17 @@ class AuthService {
   }
 
   // Login with face recognition
-  Future<Map<String, dynamic>> loginWithFace(List<double> embedding) async {
+  Future<Map<String, dynamic>> loginWithFace(List<double> embedding,
+      {double? latitude, double? longitude}) async {
     try {
       final response = await http.post(
         Uri.parse('${ApiConfig.baseUrl}${ApiConfig.authLogin}/face'),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'embedding': embedding}),
+        body: jsonEncode({
+          'embedding': embedding,
+          'location_lat': latitude,
+          'location_lng': longitude,
+        }),
       );
 
       if (response.statusCode == 200) {
@@ -78,6 +83,7 @@ class AuthService {
           'success': true,
           'user': _currentUser,
           'confidence': data['confidence'],
+          'attendance': data['attendance'], // Include attendance data
         };
       } else {
         final error = jsonDecode(response.body);

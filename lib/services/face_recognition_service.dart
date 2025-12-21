@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
@@ -190,60 +189,129 @@ class FaceRecognitionService {
     return embedding.map((value) => value / magnitude).toList();
   }
 
-  /// Send embedding to backend for face login
-  Future<Map<String, dynamic>> loginWithFace(List<double> embedding) async {
-    try {
-      print('[FaceRecognition] Logging in with face embedding');
-      print('[FaceRecognition] Embedding length: ${embedding.length}');
-      print(
-          '[FaceRecognition] Endpoint: ${ApiConfig.baseUrl}${ApiConfig.authFaceLogin}');
+  /// Send embedding to backend for face login with retry mechanism
+  Future<Map<String, dynamic>> loginWithFace(
+    List<double> embedding, {
+    double? latitude,
+    double? longitude,
+    int maxRetries = 3,
+  }) async {
+    int attempt = 0;
+    Duration delay = const Duration(seconds: 1);
 
-      final response = await _dio.post(
-        ApiConfig.authFaceLogin,
-        data: {
-          'embedding': embedding,
-        },
-      );
+    while (attempt < maxRetries) {
+      attempt++;
 
-      print('[FaceRecognition] Response status: ${response.statusCode}');
-      print('[FaceRecognition] Response data: ${response.data}');
+      try {
+        print('[FaceRecognition] Login attempt $attempt/$maxRetries');
+        print('[FaceRecognition] Embedding length: ${embedding.length}');
+        print('[FaceRecognition] Location: lat=$latitude, lng=$longitude');
 
-      if (response.statusCode == 200) {
-        final data = response.data;
+        final response = await _dio.post(
+          ApiConfig.authFaceLogin,
+          data: {
+            'embedding': embedding,
+            'location_lat': latitude,
+            'location_lng': longitude,
+          },
+          options: Options(
+            sendTimeout: const Duration(seconds: 30),
+            receiveTimeout: const Duration(seconds: 30),
+          ),
+        );
 
-        // Save tokens
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('access_token', data['accessToken']);
-        await prefs.setString('refresh_token', data['refreshToken']);
+        print('[FaceRecognition] Response status: ${response.statusCode}');
 
-        return {
-          'success': true,
-          'user': data['user'],
-          'confidence': data['confidence'],
-        };
+        if (response.statusCode == 200) {
+          final data = response.data;
+
+          // Save tokens
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('access_token', data['accessToken']);
+          await prefs.setString('refresh_token', data['refreshToken']);
+
+          return {
+            'success': true,
+            'user': data['user'],
+            'confidence': data['confidence'],
+            'attendance': data['attendance'],
+          };
+        }
+
+        // Non-retryable error (face not recognized, etc)
+        if (response.statusCode == 401 || response.statusCode == 400) {
+          return {
+            'success': false,
+            'message': response.data['message'] ?? 'Face not recognized',
+          };
+        }
+
+        // Server error - retry
+        print('[FaceRecognition] Server error, will retry...');
+      } catch (e) {
+        print('[FaceRecognition] Exception on attempt $attempt: $e');
+
+        if (e is DioException) {
+          print('[FaceRecognition] DioException type: ${e.type}');
+
+          // Rate limit error - don't retry
+          if (e.response?.statusCode == 429) {
+            final retryAfter = e.response?.data['retryAfter'] ?? 60;
+            return {
+              'success': false,
+              'message': e.response?.data['message'] ??
+                  'Terlalu banyak percobaan. Silakan tunggu $retryAfter detik.',
+            };
+          }
+
+          // Face not recognized - don't retry
+          if (e.response?.statusCode == 401 || e.response?.statusCode == 400) {
+            return {
+              'success': false,
+              'message': e.response?.data['message'] ?? 'Face not recognized',
+            };
+          }
+
+          // Network/timeout errors - retry
+          if (e.type == DioExceptionType.connectionTimeout ||
+              e.type == DioExceptionType.receiveTimeout ||
+              e.type == DioExceptionType.sendTimeout ||
+              e.type == DioExceptionType.connectionError) {
+            if (attempt < maxRetries) {
+              print(
+                  '[FaceRecognition] Network error, retrying in ${delay.inSeconds}s...');
+              await Future.delayed(delay);
+              delay *= 2; // Exponential backoff
+              continue;
+            }
+
+            return {
+              'success': false,
+              'message':
+                  'Koneksi bermasalah. Periksa internet Anda dan coba lagi.',
+            };
+          }
+        }
+
+        // Last attempt failed
+        if (attempt >= maxRetries) {
+          return {
+            'success': false,
+            'message': 'Gagal menghubungi server. Silakan coba lagi nanti.',
+          };
+        }
+
+        // Retry with backoff
+        print('[FaceRecognition] Retrying in ${delay.inSeconds}s...');
+        await Future.delayed(delay);
+        delay *= 2; // Exponential backoff
       }
-
-      return {
-        'success': false,
-        'message': 'Login failed',
-      };
-    } catch (e) {
-      print('[FaceRecognition] Exception: $e');
-      if (e is DioException) {
-        print('[FaceRecognition] DioException type: ${e.type}');
-        print('[FaceRecognition] DioException message: ${e.message}');
-        print('[FaceRecognition] DioException response: ${e.response?.data}');
-        return {
-          'success': false,
-          'message': e.response?.data['message'] ?? 'Network error',
-        };
-      }
-
-      return {
-        'success': false,
-        'message': 'Error: $e',
-      };
     }
+
+    return {
+      'success': false,
+      'message': 'Gagal setelah $maxRetries percobaan. Silakan coba lagi.',
+    };
   }
 
   /// Register face images to backend
