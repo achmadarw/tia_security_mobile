@@ -193,20 +193,17 @@ class _FaceLoginScreenState extends State<FaceLoginScreen> {
 
       print('[FACE_LOGIN] Generating embedding...');
 
-      // TEMPORARY WORKAROUND: Generate dummy embedding for testing
-      // The TFLite model has initialization issues
-      // For production, this should use real face recognition
+      // Generate face embedding using TFLite model
       List<double> embedding;
       try {
         embedding = await _faceRecognitionService.generateEmbedding(faceImage);
         print(
             '[FACE_LOGIN] Embedding generated: ${embedding.length} dimensions');
       } catch (e) {
-        print('[FACE_LOGIN] WARNING: Failed to generate embedding: $e');
-        print('[FACE_LOGIN] Using dummy embedding for demo...');
-
-        // Generate dummy embedding (192 dimensions) for testing
-        embedding = List.generate(192, (i) => (i / 192.0) * 2 - 1);
+        print('[FACE_LOGIN] ERROR: Failed to generate embedding: $e');
+        _showError('Failed to generate face embedding. Please try again.');
+        _restartDetection();
+        return;
       }
 
       print('[FACE_LOGIN] Sending to backend for recognition...');

@@ -195,9 +195,10 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
       print('[FACE_REG] Starting upload for user: ${widget.user.id}');
       print('[FACE_REG] Number of images: ${_capturedImages.length}');
 
-      // Skip embedding extraction for now - will be generated on-demand during login
-      // This avoids TFLite initialization issues
-      print('[FACE_REG] Uploading images without pre-computed embeddings');
+      // Note: For production, embeddings should be generated during registration
+      // Currently uploading images only - embeddings will be generated server-side
+      // or via script for better reliability
+      print('[FACE_REG] Uploading images for server-side embedding generation');
 
       if (mounted) {
         setState(() {
@@ -208,7 +209,7 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
       final result = await _userService.registerFaceImages(
         userId: widget.user.id,
         images: _capturedImages,
-        embeddings: null, // Will be computed on backend or on-demand
+        embeddings: null, // Server-side generation
         onProgress: (current, total) {
           if (mounted) {
             setState(() {

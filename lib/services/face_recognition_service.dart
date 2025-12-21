@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'package:tflite_flutter/tflite_flutter.dart';
 import 'package:image/image.dart' as img;
@@ -7,14 +9,26 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
 
 /// Service untuk face recognition menggunakan TensorFlow Lite
-/// Generate face embedding (512D) dan kirim ke backend untuk matching
+/// Generate face embedding (192D) dan kirim ke backend untuk matching
+/// Singleton pattern untuk memastikan hanya ada satu instance dan model di-initialize sekali
 class FaceRecognitionService {
+  // Singleton instance
+  static final FaceRecognitionService _instance =
+      FaceRecognitionService._internal();
+
+  factory FaceRecognitionService() {
+    return _instance;
+  }
+
+  FaceRecognitionService._internal();
+
   Interpreter? _interpreter;
   bool _isInitialized = false;
+  bool _isInitializing = false;
 
-  // Model input/output specs
+  // Model input/output specs for MobileFaceNet
   static const int inputSize = 112; // 112x112 for MobileFaceNet
-  static const int embeddingSize = 512; // 512D embedding output
+  static const int embeddingSize = 192; // 192D embedding output
 
   final Dio _dio = Dio(BaseOptions(
     baseUrl: ApiConfig.baseUrl,
@@ -22,55 +36,111 @@ class FaceRecognitionService {
     receiveTimeout: const Duration(seconds: 30),
   ));
 
-  /// Initialize TFLite model
+  /// Initialize TFLite model dengan retry mechanism
   Future<void> initialize() async {
-    if (_isInitialized) return;
+    // Prevent concurrent initialization
+    if (_isInitializing) {
+      print('[FaceRecognition] Already initializing, waiting...');
+      // Wait for initialization to complete
+      int attempts = 0;
+      while (_isInitializing && attempts < 50) {
+        await Future.delayed(const Duration(milliseconds: 100));
+        attempts++;
+      }
+      return;
+    }
+
+    if (_isInitialized) {
+      print('[FaceRecognition] Already initialized');
+      return;
+    }
+
+    _isInitializing = true;
 
     try {
+      print('[FaceRecognition] Starting model initialization...');
+
       // Load model from assets
       _interpreter =
           await Interpreter.fromAsset('assets/models/mobilefacenet.tflite');
 
+      print('[FaceRecognition] Model loaded, allocating tensors...');
+
       // Allocate tensors
       _interpreter!.allocateTensors();
+
+      // Add small delay to ensure full initialization
+      await Future.delayed(const Duration(milliseconds: 200));
+
+      // Verify interpreter is ready by checking input/output tensors
+      final inputTensor = _interpreter!.getInputTensor(0);
+      final outputTensor = _interpreter!.getOutputTensor(0);
+
+      print('[FaceRecognition] Input tensor shape: ${inputTensor.shape}');
+      print('[FaceRecognition] Output tensor shape: ${outputTensor.shape}');
 
       _isInitialized = true;
       print('✅ Face recognition model loaded successfully');
     } catch (e) {
       print('❌ Error loading face recognition model: $e');
+      _isInitialized = false;
+      _interpreter = null;
       throw Exception('Failed to load face recognition model: $e');
+    } finally {
+      _isInitializing = false;
     }
   }
 
   /// Generate face embedding from image
   /// Input: img.Image (112x112)
-  /// Output: List<double> (512D embedding)
+  /// Output: List<double> (192D embedding)
   Future<List<double>> generateEmbedding(img.Image faceImage) async {
-    if (!_isInitialized) await initialize();
-
-    // Ensure image is 112x112
-    if (faceImage.width != inputSize || faceImage.height != inputSize) {
-      faceImage =
-          img.copyResize(faceImage, width: inputSize, height: inputSize);
+    // Ensure model is initialized
+    if (!_isInitialized) {
+      print('[FaceRecognition] Model not initialized, initializing now...');
+      await initialize();
     }
 
-    // Prepare input tensor (1, 112, 112, 3)
-    final input = _imageToByteListFloat32(faceImage);
+    if (_interpreter == null) {
+      throw Exception('Interpreter is null after initialization');
+    }
 
-    // Prepare output tensor (1, 512)
-    final output =
-        List.filled(1 * embeddingSize, 0.0).reshape([1, embeddingSize]);
+    try {
+      // Ensure image is 112x112
+      if (faceImage.width != inputSize || faceImage.height != inputSize) {
+        faceImage =
+            img.copyResize(faceImage, width: inputSize, height: inputSize);
+      }
 
-    // Run inference
-    _interpreter!.run(input, output);
+      // Prepare input tensor (1, 112, 112, 3)
+      final inputData = _imageToByteListFloat32(faceImage);
+      final input = inputData.reshape([1, inputSize, inputSize, 3]);
 
-    // Extract embedding
-    final embedding = List<double>.from(output[0]);
+      // Prepare output tensor (1, 192)
+      final output =
+          List.filled(1 * embeddingSize, 0.0).reshape([1, embeddingSize]);
 
-    // Normalize embedding (L2 normalization)
-    final normalizedEmbedding = _normalizeEmbedding(embedding);
+      print('[FaceRecognition] Running inference...');
 
-    return normalizedEmbedding;
+      // Run inference
+      _interpreter!.run(input, output);
+
+      print('[FaceRecognition] Inference completed');
+
+      // Extract embedding
+      final embedding = List<double>.from(output[0]);
+
+      // Normalize embedding (L2 normalization)
+      final normalizedEmbedding = _normalizeEmbedding(embedding);
+
+      print(
+          '[FaceRecognition] Embedding generated: ${normalizedEmbedding.length}D');
+
+      return normalizedEmbedding;
+    } catch (e) {
+      print('[FaceRecognition] Error generating embedding: $e');
+      rethrow;
+    }
   }
 
   /// Generate embedding from file path
@@ -113,7 +183,7 @@ class FaceRecognitionService {
     for (var value in embedding) {
       sum += value * value;
     }
-    final magnitude = Math.sqrt(sum);
+    final magnitude = math.sqrt(sum);
 
     if (magnitude == 0) return embedding;
 
@@ -176,25 +246,46 @@ class FaceRecognitionService {
     }
   }
 
-  /// Register face embeddings to backend
-  /// Upload multiple embeddings for better accuracy
+  /// Register face images to backend
+  /// Backend will automatically generate embeddings using Python
   Future<Map<String, dynamic>> registerFace({
     required int userId,
-    required List<List<double>> embeddings,
+    required List<File> images,
     required String token,
   }) async {
     try {
+      print('[FaceRecognition] Registering face for user $userId');
+      print('[FaceRecognition] Images: ${images.length}');
+
       _dio.options.headers['Authorization'] = 'Bearer $token';
 
+      // Create multipart form data
+      final formData = FormData();
+
+      // Add user ID (backend expects 'userId' or 'user_id')
+      formData.fields.add(MapEntry('userId', userId.toString()));
+
+      // Add images
+      for (int i = 0; i < images.length; i++) {
+        formData.files.add(MapEntry(
+          'images',
+          await MultipartFile.fromFile(
+            images[i].path,
+            filename: 'face_$i.jpg',
+          ),
+        ));
+      }
+
+      print('[FaceRecognition] Uploading ${images.length} images...');
       final response = await _dio.post(
         ApiConfig.faceRegister,
-        data: {
-          'userId': userId,
-          'embeddings': embeddings,
-        },
+        data: formData,
       );
 
-      if (response.statusCode == 200) {
+      print('[FaceRecognition] Response status: ${response.statusCode}');
+      print('[FaceRecognition] Response data: ${response.data}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
         return {
           'success': true,
           'message': 'Face registered successfully',
@@ -233,30 +324,13 @@ class FaceRecognitionService {
       sum += diff * diff;
     }
 
-    return Math.sqrt(sum);
+    return math.sqrt(sum);
   }
 
   /// Close and cleanup
   void dispose() {
     _interpreter?.close();
     _isInitialized = false;
-  }
-}
-
-// Math helper since dart:math sqrt conflicts with some packages
-class Math {
-  static double sqrt(double value) {
-    return value < 0 ? 0 : _sqrtImpl(value);
-  }
-
-  static double _sqrtImpl(double value) {
-    double guess = value / 2;
-    double epsilon = 0.00001;
-
-    while ((guess * guess - value).abs() > epsilon) {
-      guess = (guess + value / guess) / 2;
-    }
-
-    return guess;
+    _isInitializing = false;
   }
 }
