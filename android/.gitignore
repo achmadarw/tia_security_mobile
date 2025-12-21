@@ -1,0 +1,58 @@
+gradle-wrapper.jar
+/.gradle
+/captures/
+/gradlew
+/gradlew.bat
+/local.properties
+GeneratedPluginRegistrant.java
+.cxx/
+
+# Remember to never publicly share your keystore.
+# See https://flutter.dev/to/reference-keystore
+key.properties
+**/*.keystore
+**/*.jks
+
+# Miscellaneous
+*.class
+*.lock
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.buildlog/
+.history
+.svn/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# Visual Studio Code related
+.classpath
+.project
+.settings/
+.vscode/*
+.ccls-cache
+
+# Build artifacts
+build/
+.dart_tool/
+
+# Dependency cache
+.pub-cache/
+
+# Crash reporting
+/*.memreport
+/*.stackdump
+
+# Specific files
+pubspec.lock # Generally you want to commit this file, but uncomment if you wish to ignore it
+!/pubspec.lock # Ensures pubspec.lock is tracked if the previous line is commented out
+
+# Secrets (add your own as needed)
+# .env
+# keys.json
