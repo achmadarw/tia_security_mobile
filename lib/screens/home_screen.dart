@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'dart:ui';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
 import '../config/theme.dart';
+import '../config/theme_provider.dart';
 import 'login_screen.dart';
 import 'users_screen.dart';
 import 'face_login_screen.dart';
@@ -60,68 +63,64 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     final now = DateTime.now();
     final greeting = _getGreeting();
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    // Set status bar color to match header
+    SystemChrome.setSystemUIOverlayStyle(
+      SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: isDark ? Brightness.light : Brightness.light,
+        statusBarBrightness: isDark ? Brightness.dark : Brightness.dark,
+      ),
+    );
+
     return Scaffold(
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       extendBodyBehindAppBar: true,
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              AppColors.primary,
-              AppColors.primary.withOpacity(0.8),
-              Colors.white,
-            ],
-            stops: const [0.0, 0.25, 0.4],
-          ),
-        ),
-        child: SafeArea(
-          child: RefreshIndicator(
-            onRefresh: () async {
-              await Future.delayed(const Duration(seconds: 1));
-              setState(() {});
-            },
-            child: CustomScrollView(
-              physics: const BouncingScrollPhysics(),
-              slivers: [
-                // Modern Header
-                SliverToBoxAdapter(
-                  child: _buildModernHeader(user, greeting, now),
-                ),
-
-                // Today's Status Card
-                SliverToBoxAdapter(
-                  child: FadeTransition(
-                    opacity: _fadeAnimation,
-                    child: ScaleTransition(
-                      scale: _scaleAnimation,
-                      child: _buildTodayStatusCard(),
-                    ),
-                  ),
-                ),
-
-                // Quick Stats
-                SliverToBoxAdapter(
-                  child: FadeTransition(
-                    opacity: _fadeAnimation,
-                    child: _buildQuickStats(),
-                  ),
-                ),
-
-                // Quick Actions
-                SliverToBoxAdapter(
-                  child: _buildModernQuickActions(),
-                ),
-
-                // Recent Activity
-                SliverToBoxAdapter(
-                  child: _buildActivityTimeline(),
-                ),
-
-                const SliverToBoxAdapter(child: SizedBox(height: 100)),
-              ],
+      body: RefreshIndicator(
+        onRefresh: () async {
+          await Future.delayed(const Duration(seconds: 1));
+          setState(() {});
+        },
+        child: CustomScrollView(
+          physics: const BouncingScrollPhysics(),
+          slivers: [
+            // Modern Header
+            SliverToBoxAdapter(
+              child: _buildModernHeader(user, greeting, now),
             ),
-          ),
+
+            // Today's Status Card
+            SliverToBoxAdapter(
+              child: FadeTransition(
+                opacity: _fadeAnimation,
+                child: ScaleTransition(
+                  scale: _scaleAnimation,
+                  child: _buildTodayStatusCard(),
+                ),
+              ),
+            ),
+
+            // Quick Stats
+            SliverToBoxAdapter(
+              child: FadeTransition(
+                opacity: _fadeAnimation,
+                child: _buildQuickStats(),
+              ),
+            ),
+
+            // Quick Actions
+            SliverToBoxAdapter(
+              child: _buildModernQuickActions(),
+            ),
+
+            // Recent Activity
+            SliverToBoxAdapter(
+              child: _buildActivityTimeline(),
+            ),
+
+            const SliverToBoxAdapter(child: SizedBox(height: 100)),
+          ],
         ),
       ),
       floatingActionButton: _buildFloatingActions(),
@@ -139,8 +138,22 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildModernHeader(user, String greeting, DateTime now) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final primaryColor = Theme.of(context).colorScheme.primary;
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+
+    // Get status bar height
+    final topPadding = MediaQuery.of(context).padding.top;
+
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+      padding: EdgeInsets.fromLTRB(20, topPadding + 16, 20, 24),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.darkSurface : AppColors.lightPrimary,
+        borderRadius: const BorderRadius.only(
+          bottomLeft: Radius.circular(24),
+          bottomRight: Radius.circular(24),
+        ),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -152,22 +165,29 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   Hero(
                     tag: 'user_avatar',
                     child: Container(
-                      padding: const EdgeInsets.all(2),
+                      padding: const EdgeInsets.all(3),
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        gradient: LinearGradient(
-                          colors: [Colors.white, Colors.white.withOpacity(0.5)],
-                        ),
+                        color: Colors.white,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.1),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
                       ),
                       child: CircleAvatar(
                         radius: 28,
-                        backgroundColor: Colors.white,
+                        backgroundColor: isDark
+                            ? AppColors.darkPrimary
+                            : AppColors.lightPrimaryLight,
                         child: Text(
                           user?.name[0].toUpperCase() ?? 'U',
                           style: TextStyle(
                             fontSize: 24,
                             fontWeight: FontWeight.bold,
-                            color: AppColors.primary,
+                            color: isDark ? Colors.black : Colors.white,
                           ),
                         ),
                       ),
@@ -179,18 +199,21 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     children: [
                       Text(
                         greeting,
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w400,
+                        style: TextStyle(
+                          color: isDark
+                              ? AppColors.darkTextSecondary
+                              : Colors.white70,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                       const SizedBox(height: 2),
                       Text(
                         user?.name ?? 'User',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
+                        style: TextStyle(
+                          color:
+                              isDark ? AppColors.darkTextPrimary : Colors.white,
+                          fontSize: 22,
                           fontWeight: FontWeight.bold,
                           letterSpacing: 0.5,
                         ),
@@ -223,15 +246,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           const SizedBox(height: 16),
           Text(
             DateFormat('EEEE, d MMMM yyyy').format(now),
-            style: const TextStyle(color: Colors.white70, fontSize: 13),
+            style: TextStyle(
+              color: isDark ? AppColors.darkTextSecondary : Colors.white70,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
           ),
           Text(
             DateFormat('HH:mm').format(now),
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 32,
+            style: TextStyle(
+              color: isDark ? AppColors.darkTextPrimary : Colors.white,
+              fontSize: 36,
               fontWeight: FontWeight.bold,
-              letterSpacing: 1,
+              letterSpacing: 1.5,
             ),
           ),
         ],
@@ -241,23 +268,30 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   Widget _buildHeaderIconButton(IconData icon, VoidCallback onTap,
       {String? badge}) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Stack(
       children: [
         Container(
           margin: const EdgeInsets.all(4),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.2),
+            color: isDark
+                ? Colors.white.withOpacity(0.1)
+                : Colors.white.withOpacity(0.2),
             shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
+            border: Border.all(
+              color: isDark
+                  ? Colors.white.withOpacity(0.2)
+                  : Colors.white.withOpacity(0.3),
+              width: 1,
+            ),
           ),
           child: IconButton(
-            icon: Icon(icon, color: Colors.white, size: 22),
+            icon: Icon(
+              icon,
+              color: isDark ? AppColors.darkTextPrimary : Colors.white,
+              size: 24,
+            ),
             onPressed: onTap,
           ),
         ),
@@ -266,14 +300,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             right: 8,
             top: 8,
             child: Container(
-              padding: const EdgeInsets.all(4),
-              decoration: const BoxDecoration(
-                  color: Colors.red, shape: BoxShape.circle),
+              padding: const EdgeInsets.all(5),
+              decoration: BoxDecoration(
+                color: isDark ? AppColors.errorDark : AppColors.error,
+                shape: BoxShape.circle,
+              ),
               child: Text(
                 badge,
                 style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 9,
+                    fontSize: 10,
                     fontWeight: FontWeight.bold),
               ),
             ),
@@ -283,26 +319,28 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildTodayStatusCard() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final primaryColor = Theme.of(context).colorScheme.primary;
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       child: Container(
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              AppColors.primary.withOpacity(0.95),
-              AppColors.primary.withOpacity(0.85),
-            ],
+          color: isDark ? AppColors.darkCard : primaryColor,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color:
+                isDark ? AppColors.borderDark : Colors.white.withOpacity(0.3),
+            width: 1.5,
           ),
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: Colors.white.withOpacity(0.3), width: 1.5),
           boxShadow: [
             BoxShadow(
-              color: AppColors.primary.withOpacity(0.3),
-              blurRadius: 20,
-              offset: const Offset(0, 8),
+              color: isDark
+                  ? Colors.black.withOpacity(0.3)
+                  : primaryColor.withOpacity(0.3),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
             ),
           ],
         ),
@@ -314,49 +352,41 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'Status Hari Ini',
                       style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
+                        color: isDark
+                            ? AppColors.darkTextSecondary
+                            : Colors.white.withOpacity(0.9),
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 6),
                     Text(
                       _isCheckedIn ? 'Sudah Check-in' : 'Belum Check-in',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 22,
+                      style: TextStyle(
+                        color:
+                            isDark ? AppColors.darkTextPrimary : Colors.white,
+                        fontSize: 24,
                         fontWeight: FontWeight.bold,
                         letterSpacing: 0.5,
-                        shadows: [
-                          Shadow(
-                            color: Colors.black26,
-                            blurRadius: 8,
-                          ),
-                        ],
                       ),
                     ),
                   ],
                 ),
                 Container(
-                  padding: const EdgeInsets.all(14),
+                  padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.25),
+                    color: isDark
+                        ? AppColors.darkPrimary.withOpacity(0.3)
+                        : Colors.white.withOpacity(0.25),
                     shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.15),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
                   ),
                   child: Icon(
                     _isCheckedIn ? Icons.check_circle : Icons.schedule,
-                    color: Colors.white,
-                    size: 34,
+                    color: isDark ? AppColors.darkPrimary : Colors.white,
+                    size: 36,
                   ),
                 ),
               ],
@@ -372,19 +402,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   ),
                 ),
                 Container(
-                  width: 1,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.white.withOpacity(0.1),
-                        Colors.white.withOpacity(0.5),
-                        Colors.white.withOpacity(0.1),
-                      ],
-                    ),
-                  ),
+                  width: 2,
+                  height: 50,
+                  color: isDark
+                      ? AppColors.dividerDark
+                      : Colors.white.withOpacity(0.4),
                 ),
                 Expanded(
                   child: _buildStatusInfo(
@@ -394,19 +416,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   ),
                 ),
                 Container(
-                  width: 1,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.white.withOpacity(0.1),
-                        Colors.white.withOpacity(0.5),
-                        Colors.white.withOpacity(0.1),
-                      ],
-                    ),
-                  ),
+                  width: 2,
+                  height: 50,
+                  color: isDark
+                      ? AppColors.dividerDark
+                      : Colors.white.withOpacity(0.4),
                 ),
                 Expanded(
                   child: _buildStatusInfo(
@@ -424,29 +438,31 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildStatusInfo(String label, String value, IconData icon) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Column(
       children: [
-        Icon(icon, color: Colors.white, size: 22),
+        Icon(
+          icon,
+          color: isDark ? AppColors.darkTextPrimary : Colors.white,
+          size: 24,
+        ),
         const SizedBox(height: 8),
         Text(
           value,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 16,
+          style: TextStyle(
+            color: isDark ? AppColors.darkTextPrimary : Colors.white,
+            fontSize: 18,
             fontWeight: FontWeight.bold,
-            shadows: [
-              Shadow(
-                color: Colors.black26,
-                blurRadius: 4,
-              ),
-            ],
           ),
         ),
         Text(
           label,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 11,
+          style: TextStyle(
+            color: isDark
+                ? AppColors.darkTextSecondary
+                : Colors.white.withOpacity(0.9),
+            fontSize: 13,
             fontWeight: FontWeight.w500,
           ),
         ),
@@ -495,14 +511,22 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   Widget _buildStatCardMini(
       String label, String value, String subtitle, IconData icon, Color color) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isDark ? AppColors.darkCard : Colors.white,
         borderRadius: BorderRadius.circular(16),
+        border: isDark
+            ? Border.all(
+                color: AppColors.borderDark,
+                width: 1,
+              )
+            : null,
         boxShadow: [
           BoxShadow(
-            color: color.withOpacity(0.15),
+            color: color.withOpacity(isDark ? 0.2 : 0.15),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
@@ -510,21 +534,35 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       ),
       child: Column(
         children: [
-          Icon(icon, color: color, size: 24),
+          Icon(
+            icon,
+            color: isDark
+                ? (color.computeLuminance() > 0.5
+                    ? color
+                    : color.withOpacity(0.8))
+                : color,
+            size: 28,
+          ),
           const SizedBox(height: 8),
           Text(
             value,
             style: TextStyle(
-              color: color,
-              fontSize: 24,
+              color: isDark
+                  ? (color.computeLuminance() > 0.5
+                      ? color
+                      : color.withOpacity(0.8))
+                  : color,
+              fontSize: 26,
               fontWeight: FontWeight.bold,
             ),
           ),
           Text(
             label,
-            style: const TextStyle(
-              color: Colors.black87,
-              fontSize: 12,
+            style: TextStyle(
+              color: isDark
+                  ? AppColors.darkTextPrimary
+                  : AppColors.lightTextPrimary,
+              fontSize: 14,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -532,8 +570,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           Text(
             subtitle,
             style: TextStyle(
-              color: Colors.grey[600],
-              fontSize: 9,
+              color: isDark
+                  ? AppColors.darkTextSecondary
+                  : AppColors.lightTextSecondary,
+              fontSize: 11,
             ),
             textAlign: TextAlign.center,
           ),
@@ -585,17 +625,21 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       }),
     ];
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Container(
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Aksi Cepat',
             style: TextStyle(
-              fontSize: 18,
+              fontSize: 20,
               fontWeight: FontWeight.bold,
-              color: Colors.black87,
+              color: isDark
+                  ? AppColors.darkTextPrimary
+                  : AppColors.lightTextPrimary,
             ),
           ),
           const SizedBox(height: 16),
@@ -612,18 +656,26 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildModernActionCard(_ActionData action) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return InkWell(
       onTap: action.onTap,
       borderRadius: BorderRadius.circular(16),
       child: Container(
         width: (MediaQuery.of(context).size.width - 64) / 3,
-        padding: const EdgeInsets.symmetric(vertical: 16),
+        padding: const EdgeInsets.symmetric(vertical: 18),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: isDark ? AppColors.darkCard : Colors.white,
           borderRadius: BorderRadius.circular(16),
+          border: isDark
+              ? Border.all(
+                  color: AppColors.borderDark,
+                  width: 1,
+                )
+              : null,
           boxShadow: [
             BoxShadow(
-              color: action.color.withOpacity(0.15),
+              color: action.color.withOpacity(isDark ? 0.2 : 0.15),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
@@ -633,20 +685,28 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: action.color.withOpacity(0.1),
+                color: action.color.withOpacity(isDark ? 0.2 : 0.1),
                 shape: BoxShape.circle,
               ),
-              child: Icon(action.icon, color: action.color, size: 24),
+              child: Icon(
+                action.icon,
+                color: isDark && action.color.computeLuminance() < 0.3
+                    ? action.color.withOpacity(0.8)
+                    : action.color,
+                size: 26,
+              ),
             ),
             const SizedBox(height: 8),
             Text(
               action.label,
-              style: const TextStyle(
-                fontSize: 12,
+              style: TextStyle(
+                fontSize: 13,
                 fontWeight: FontWeight.w600,
-                color: Colors.black87,
+                color: isDark
+                    ? AppColors.darkTextPrimary
+                    : AppColors.lightTextPrimary,
               ),
               textAlign: TextAlign.center,
             ),
@@ -657,6 +717,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildActivityTimeline() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Container(
       padding: const EdgeInsets.all(20),
       child: Column(
@@ -665,17 +727,26 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
+              Text(
                 'Aktivitas Terkini',
                 style: TextStyle(
-                  fontSize: 18,
+                  fontSize: 20,
                   fontWeight: FontWeight.bold,
-                  color: Colors.black87,
+                  color: isDark
+                      ? AppColors.darkTextPrimary
+                      : AppColors.lightTextPrimary,
                 ),
               ),
               TextButton(
                 onPressed: () {},
-                child: const Text('Lihat Semua'),
+                child: Text(
+                  'Lihat Semua',
+                  style: TextStyle(
+                    color:
+                        isDark ? AppColors.darkPrimary : AppColors.lightPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
             ],
           ),
@@ -715,18 +786,30 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     String time, {
     bool isLast = false,
   }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Column(
           children: [
             Container(
-              padding: const EdgeInsets.all(8),
+              padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
+                color: color.withOpacity(isDark ? 0.25 : 0.1),
                 shape: BoxShape.circle,
+                border: Border.all(
+                  color: color.withOpacity(isDark ? 0.4 : 0.2),
+                  width: 2,
+                ),
               ),
-              child: Icon(icon, color: color, size: 20),
+              child: Icon(
+                icon,
+                color: isDark && color.computeLuminance() < 0.3
+                    ? color.withOpacity(0.8)
+                    : color,
+                size: 22,
+              ),
             ),
             if (!isLast)
               Container(
@@ -737,7 +820,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
-                    colors: [color.withOpacity(0.3), Colors.transparent],
+                    colors: [
+                      color.withOpacity(isDark ? 0.4 : 0.3),
+                      Colors.transparent,
+                    ],
                   ),
                 ),
               ),
@@ -746,14 +832,22 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         const SizedBox(width: 16),
         Expanded(
           child: Container(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(18),
             margin: const EdgeInsets.only(bottom: 12),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: isDark ? AppColors.darkCard : Colors.white,
               borderRadius: BorderRadius.circular(12),
+              border: isDark
+                  ? Border.all(
+                      color: AppColors.borderDark,
+                      width: 1,
+                    )
+                  : null,
               boxShadow: [
                 BoxShadow(
-                  color: Colors.grey.withOpacity(0.1),
+                  color: isDark
+                      ? Colors.black.withOpacity(0.3)
+                      : Colors.grey.withOpacity(0.1),
                   blurRadius: 8,
                   offset: const Offset(0, 2),
                 ),
@@ -765,29 +859,37 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                        color: Colors.black87,
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                          color: isDark
+                              ? AppColors.darkTextPrimary
+                              : AppColors.lightTextPrimary,
+                        ),
                       ),
                     ),
                     Text(
                       time,
                       style: TextStyle(
-                        fontSize: 11,
-                        color: Colors.grey[600],
+                        fontSize: 12,
+                        color: isDark
+                            ? AppColors.darkTextTertiary
+                            : AppColors.lightTextSecondary,
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 6),
                 Text(
                   subtitle,
                   style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[600],
+                    fontSize: 13,
+                    color: isDark
+                        ? AppColors.darkTextSecondary
+                        : AppColors.lightTextSecondary,
                   ),
                 ),
               ],
@@ -799,19 +901,20 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildFloatingActions() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final primaryColor = Theme.of(context).colorScheme.primary;
+
     return Container(
       height: 65,
       width: 65,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        gradient: LinearGradient(
-          colors: [AppColors.primary, AppColors.primary.withOpacity(0.8)],
-        ),
+        color: primaryColor,
         boxShadow: [
           BoxShadow(
-            color: AppColors.primary.withOpacity(0.4),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
+            color: primaryColor.withOpacity(0.4),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
           ),
         ],
       ),
@@ -824,18 +927,27 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             MaterialPageRoute(builder: (context) => const FaceLoginScreen()),
           );
         },
-        child: const Icon(Icons.face, size: 32),
+        child: Icon(
+          Icons.face,
+          size: 32,
+          color: isDark ? Colors.black : Colors.white,
+        ),
       ),
     );
   }
 
   Widget _buildBottomNavBar() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final primaryColor = Theme.of(context).colorScheme.primary;
+
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isDark ? AppColors.darkSurface : Colors.white,
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.2),
+            color: isDark
+                ? Colors.black.withOpacity(0.4)
+                : Colors.grey.withOpacity(0.2),
             blurRadius: 20,
             offset: const Offset(0, -5),
           ),
@@ -847,32 +959,39 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         type: BottomNavigationBarType.fixed,
         elevation: 0,
         backgroundColor: Colors.transparent,
-        selectedItemColor: AppColors.primary,
-        unselectedItemColor: Colors.grey,
-        selectedFontSize: 12,
+        selectedItemColor: primaryColor,
+        unselectedItemColor:
+            isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+        selectedFontSize: 13,
         unselectedFontSize: 12,
+        selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600),
         items: const [
           BottomNavigationBarItem(
-              icon: Icon(Icons.home_rounded), label: 'Home'),
+              icon: Icon(Icons.home_rounded, size: 26), label: 'Home'),
           BottomNavigationBarItem(
-              icon: Icon(Icons.calendar_today), label: 'Jadwal'),
-          BottomNavigationBarItem(icon: Icon(Icons.face), label: ''),
+              icon: Icon(Icons.calendar_today, size: 24), label: 'Jadwal'),
+          BottomNavigationBarItem(icon: Icon(Icons.face, size: 0), label: ''),
           BottomNavigationBarItem(
-              icon: Icon(Icons.assessment), label: 'Laporan'),
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profil'),
+              icon: Icon(Icons.assessment, size: 26), label: 'Laporan'),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.person, size: 26), label: 'Profil'),
         ],
       ),
     );
   }
 
   void _showSettingsMenu(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final themeProvider = Provider.of<ThemeProvider>(context, listen: false);
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
+      isScrollControlled: true,
       builder: (context) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        decoration: BoxDecoration(
+          color: isDark ? AppColors.darkSurface : Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         ),
         padding: const EdgeInsets.symmetric(vertical: 24),
         child: Column(
@@ -883,13 +1002,81 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               height: 4,
               margin: const EdgeInsets.only(bottom: 20),
               decoration: BoxDecoration(
-                color: Colors.grey[300],
+                color: isDark ? AppColors.dividerDark : Colors.grey[300],
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              child: Text(
+                'Pengaturan',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: isDark
+                      ? AppColors.darkTextPrimary
+                      : AppColors.lightTextPrimary,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+
+            // Dark Mode Toggle
             ListTile(
-              leading: const Icon(Icons.person),
-              title: const Text('Profile'),
+              leading: Icon(
+                isDark ? Icons.dark_mode : Icons.light_mode,
+                color: isDark ? AppColors.darkPrimary : AppColors.lightPrimary,
+                size: 26,
+              ),
+              title: Text(
+                'Mode ${isDark ? "Gelap" : "Terang"}',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                  color: isDark
+                      ? AppColors.darkTextPrimary
+                      : AppColors.lightTextPrimary,
+                ),
+              ),
+              subtitle: Text(
+                isDark ? 'Untuk shift malam (hemat mata)' : 'Untuk siang hari',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: isDark
+                      ? AppColors.darkTextSecondary
+                      : AppColors.lightTextSecondary,
+                ),
+              ),
+              trailing: Switch(
+                value: isDark,
+                activeColor: AppColors.darkPrimary,
+                onChanged: (value) {
+                  themeProvider.toggleTheme();
+                  Navigator.pop(context);
+                },
+              ),
+            ),
+
+            Divider(
+                color: isDark ? AppColors.dividerDark : AppColors.dividerLight),
+
+            ListTile(
+              leading: Icon(
+                Icons.person,
+                color: isDark
+                    ? AppColors.darkTextPrimary
+                    : AppColors.lightTextPrimary,
+                size: 26,
+              ),
+              title: Text(
+                'Profile',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: isDark
+                      ? AppColors.darkTextPrimary
+                      : AppColors.lightTextPrimary,
+                ),
+              ),
               onTap: () {
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -898,8 +1085,22 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.settings),
-              title: const Text('Settings'),
+              leading: Icon(
+                Icons.settings,
+                color: isDark
+                    ? AppColors.darkTextPrimary
+                    : AppColors.lightTextPrimary,
+                size: 26,
+              ),
+              title: Text(
+                'Pengaturan Lainnya',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: isDark
+                      ? AppColors.darkTextPrimary
+                      : AppColors.lightTextPrimary,
+                ),
+              ),
               onTap: () {
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -907,10 +1108,22 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 );
               },
             ),
-            const Divider(),
+            Divider(
+                color: isDark ? AppColors.dividerDark : AppColors.dividerLight),
             ListTile(
-              leading: const Icon(Icons.logout, color: Colors.red),
-              title: const Text('Logout', style: TextStyle(color: Colors.red)),
+              leading: Icon(
+                Icons.logout,
+                color: isDark ? AppColors.errorDark : AppColors.error,
+                size: 26,
+              ),
+              title: Text(
+                'Logout',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: isDark ? AppColors.errorDark : AppColors.error,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
               onTap: () async {
                 await widget.authService.logout();
                 if (!context.mounted) return;

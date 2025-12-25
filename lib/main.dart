@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'config/theme.dart';
+import 'config/theme_provider.dart';
 import 'services/auth_service.dart';
 import 'services/face_recognition_service.dart';
 import 'screens/splash_screen.dart';
@@ -22,7 +24,14 @@ void main() async {
     print('[Main] Model will be initialized on first use');
   }
 
-  runApp(MyApp(authService: authService));
+  runApp(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => ThemeProvider()),
+      ],
+      child: MyApp(authService: authService),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
@@ -32,11 +41,17 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'TIA - Security Management',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme,
-      home: SplashScreen(authService: authService),
+    return Consumer<ThemeProvider>(
+      builder: (context, themeProvider, child) {
+        return MaterialApp(
+          title: 'TIA - Security Management',
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.lightTheme,
+          darkTheme: AppTheme.darkTheme,
+          themeMode: themeProvider.themeMode,
+          home: SplashScreen(authService: authService),
+        );
+      },
     );
   }
 }
