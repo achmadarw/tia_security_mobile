@@ -23,10 +23,17 @@ class FaceDetectionService {
 
   /// Initialize face detector
   Future<void> initialize() async {
-    if (_isInitialized) return;
+    if (_isInitialized) {
+      print('[FACE_SERVICE] Already initialized');
+      return;
+    }
 
+    print('[FACE_SERVICE] Initializing face detector...');
+    print(
+        '[FACE_SERVICE] Options: minFaceSize=${_options.minFaceSize}, mode=${_options.performanceMode}');
     _faceDetector = FaceDetector(options: _options);
     _isInitialized = true;
+    print('[FACE_SERVICE] Face detector initialized successfully');
   }
 
   /// Detect faces from image file
@@ -41,13 +48,22 @@ class FaceDetectionService {
 
   /// Detect faces from camera image
   Future<List<Face>> detectFacesFromCamera(CameraImage cameraImage) async {
-    if (!_isInitialized) await initialize();
+    if (!_isInitialized) {
+      print('[FACE_SERVICE] Not initialized, initializing now...');
+      await initialize();
+    }
+
+    print(
+        '[FACE_SERVICE] Processing camera image: ${cameraImage.width}x${cameraImage.height}');
+    print('[FACE_SERVICE] Image format: ${cameraImage.format.group}');
+    print('[FACE_SERVICE] Planes: ${cameraImage.planes.length}');
 
     final bytesBuilder = BytesBuilder();
     for (final plane in cameraImage.planes) {
       bytesBuilder.add(plane.bytes);
     }
     final bytes = bytesBuilder.toBytes();
+    print('[FACE_SERVICE] Total bytes: ${bytes.length}');
 
     final inputImage = InputImage.fromBytes(
       bytes: bytes,
@@ -60,7 +76,17 @@ class FaceDetectionService {
       ),
     );
 
+    print('[FACE_SERVICE] Calling ML Kit processImage...');
     final faces = await _faceDetector.processImage(inputImage);
+    print('[FACE_SERVICE] ML Kit returned ${faces.length} faces');
+
+    if (faces.isNotEmpty) {
+      for (int i = 0; i < faces.length; i++) {
+        final face = faces[i];
+        print('[FACE_SERVICE] Face $i: boundingBox=${face.boundingBox}');
+      }
+    }
+
     return faces;
   }
 
