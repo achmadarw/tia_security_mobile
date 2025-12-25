@@ -40,6 +40,11 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
   List<Face> _detectedFaces = [];
   int _uploadProgress = 0;
 
+  // Lighting detection
+  double _lightingQuality = 0.0; // 0.0 to 1.0
+  String _lightingStatus = 'Memeriksa...';
+  bool _isLightingGood = false;
+
   @override
   void initState() {
     super.initState();
@@ -110,6 +115,9 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
       _isDetecting = true;
 
       try {
+        // Detect lighting quality from camera image
+        _detectLightingQuality(image);
+
         final faces = await _faceDetectionService.detectFacesFromCamera(image);
         print('[DEBUG] Faces detected: ${faces.length}');
 
@@ -147,8 +155,64 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
     });
   }
 
+  void _detectLightingQuality(CameraImage image) {
+    // Calculate average brightness from Y plane (luminance)
+    if (image.planes.isEmpty) return;
+
+    final yPlane = image.planes[0];
+    final int totalPixels = yPlane.bytes.length;
+
+    if (totalPixels == 0) return;
+
+    int sum = 0;
+    for (int i = 0; i < totalPixels; i++) {
+      sum += yPlane.bytes[i];
+    }
+
+    final double averageBrightness = sum / totalPixels;
+
+    // Normalize to 0.0 - 1.0 scale
+    _lightingQuality = averageBrightness / 255.0;
+
+    // Determine lighting status
+    // Good lighting: 0.25 - 0.85 (avoid too dark or overexposed)
+    if (_lightingQuality < 0.15) {
+      _lightingStatus = 'Terlalu Gelap';
+      _isLightingGood = false;
+    } else if (_lightingQuality > 0.90) {
+      _lightingStatus = 'Terlalu Terang';
+      _isLightingGood = false;
+    } else if (_lightingQuality < 0.25) {
+      _lightingStatus = 'Kurang Cahaya';
+      _isLightingGood = false;
+    } else {
+      _lightingStatus = 'Bagus';
+      _isLightingGood = true;
+    }
+
+    print(
+        '[DEBUG] Lighting: ${(_lightingQuality * 100).toStringAsFixed(1)}% - $_lightingStatus');
+  }
+
   Future<void> _captureImage() async {
     print('[DEBUG] Capture button pressed!');
+
+    if (!_isLightingGood) {
+      print(
+          '[DEBUG] Cannot capture - lighting quality is poor: $_lightingStatus');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                'Pencahayaan $_lightingStatus - Perbaiki pencahayaan terlebih dahulu'),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+      return;
+    }
+
     if (_isProcessing || _capturedImages.length >= _requiredImages) {
       print(
           '[DEBUG] Cannot capture - isProcessing: $_isProcessing, captured: ${_capturedImages.length}/$_requiredImages');
@@ -340,11 +404,7 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     _buildProgress(),
-                    if (_capturedImages.isNotEmpty)
-                      SizedBox(
-                        height: 100,
-                        child: _buildThumbnailStrip(),
-                      ),
+                    // Thumbnail strip removed - using progress dots instead
                     _buildModernActions(),
                   ],
                 ),
@@ -354,22 +414,26 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
 
           // CAPTURE BUTTON - placed AFTER bottom overlay so it's on top
           Positioned(
-            bottom: 180,
+            bottom: 100,
             left: 0,
             right: 0,
             child: Center(
               child: GestureDetector(
-                onTap: _isProcessing ? null : _captureImage,
+                onTap:
+                    (_isProcessing || !_isLightingGood) ? null : _captureImage,
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
                   width: 75,
                   height: 75,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: _isProcessing ? Colors.grey[400] : Colors.white,
+                    color: (_isProcessing || !_isLightingGood)
+                        ? Colors.grey[400]
+                        : Colors.white,
                     border: Border.all(
-                      color:
-                          _isProcessing ? Colors.grey[600]! : Colors.grey[300]!,
+                      color: (_isProcessing || !_isLightingGood)
+                          ? Colors.grey[600]!
+                          : Colors.grey[300]!,
                       width: 5,
                     ),
                     boxShadow: [
@@ -391,7 +455,9 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
                       : Icon(
                           Icons.camera_alt,
                           size: 35,
-                          color: Colors.grey[700],
+                          color: !_isLightingGood
+                              ? Colors.grey[600]
+                              : Colors.grey[700],
                         ),
                 ),
               ),
@@ -747,19 +813,27 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
               ],
             ),
           ),
+          // Counter badge moved to separate positioned widget
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             decoration: BoxDecoration(
-              color: AppColors.primary,
-              borderRadius: BorderRadius.circular(20),
+              color: Colors.black.withOpacity(0.7),
+              borderRadius: BorderRadius.circular(25),
             ),
-            child: Text(
-              '${_capturedImages.length}/$_requiredImages',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-              ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.camera_alt, color: Colors.white, size: 18),
+                const SizedBox(width: 6),
+                Text(
+                  '${_capturedImages.length}/$_requiredImages',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -829,7 +903,7 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: index < _capturedImages.length
-                        ? Colors.white
+                        ? Colors.green
                         : Colors.grey.withOpacity(0.5),
                   ),
                 ),
@@ -845,17 +919,23 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.7),
+              color: _isLightingGood
+                  ? Colors.green.withOpacity(0.8)
+                  : Colors.orange.withOpacity(0.8),
               borderRadius: BorderRadius.circular(25),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
-              children: const [
-                Icon(Icons.wb_sunny, color: Colors.yellow, size: 20),
-                SizedBox(width: 8),
+              children: [
+                Icon(
+                  _isLightingGood ? Icons.wb_sunny : Icons.wb_cloudy,
+                  color: Colors.white,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
                 Text(
-                  'Bagus',
-                  style: TextStyle(
+                  _lightingStatus,
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
