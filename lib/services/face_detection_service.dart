@@ -48,46 +48,53 @@ class FaceDetectionService {
 
   /// Detect faces from camera image
   Future<List<Face>> detectFacesFromCamera(CameraImage cameraImage) async {
-    if (!_isInitialized) {
-      print('[FACE_SERVICE] Not initialized, initializing now...');
-      await initialize();
-    }
-
-    print(
-        '[FACE_SERVICE] Processing camera image: ${cameraImage.width}x${cameraImage.height}');
-    print('[FACE_SERVICE] Image format: ${cameraImage.format.group}');
-    print('[FACE_SERVICE] Planes: ${cameraImage.planes.length}');
-
-    final bytesBuilder = BytesBuilder();
-    for (final plane in cameraImage.planes) {
-      bytesBuilder.add(plane.bytes);
-    }
-    final bytes = bytesBuilder.toBytes();
-    print('[FACE_SERVICE] Total bytes: ${bytes.length}');
-
-    final inputImage = InputImage.fromBytes(
-      bytes: bytes,
-      metadata: InputImageMetadata(
-        size: ui.Size(
-            cameraImage.width.toDouble(), cameraImage.height.toDouble()),
-        rotation: InputImageRotation.rotation0deg,
-        format: InputImageFormat.nv21,
-        bytesPerRow: cameraImage.planes[0].bytesPerRow,
-      ),
-    );
-
-    print('[FACE_SERVICE] Calling ML Kit processImage...');
-    final faces = await _faceDetector.processImage(inputImage);
-    print('[FACE_SERVICE] ML Kit returned ${faces.length} faces');
-
-    if (faces.isNotEmpty) {
-      for (int i = 0; i < faces.length; i++) {
-        final face = faces[i];
-        print('[FACE_SERVICE] Face $i: boundingBox=${face.boundingBox}');
+    try {
+      if (!_isInitialized) {
+        await initialize();
       }
-    }
 
-    return faces;
+      final bytesBuilder = BytesBuilder();
+      for (final plane in cameraImage.planes) {
+        bytesBuilder.add(plane.bytes);
+      }
+      final bytes = bytesBuilder.toBytes();
+
+      // For Android front camera, rotation is typically 270 degrees
+      // Try rotation90deg first (common for front camera portrait mode)
+      final inputImage = InputImage.fromBytes(
+        bytes: bytes,
+        metadata: InputImageMetadata(
+          size: ui.Size(
+              cameraImage.width.toDouble(), cameraImage.height.toDouble()),
+          rotation:
+              InputImageRotation.rotation270deg, // Changed from rotation0deg
+          format: InputImageFormat.nv21,
+          bytesPerRow: cameraImage.planes[0].bytesPerRow,
+        ),
+      );
+
+      print(
+          '[FACE_SERVICE] 🔍 Processing image: ${cameraImage.width}x${cameraImage.height}, format: NV21, rotation: 270°');
+
+      final faces = await _faceDetector.processImage(inputImage);
+
+      print(
+          '[FACE_SERVICE] 📊 Detection result: ${faces.length} face(s) found');
+      if (faces.isNotEmpty) {
+        for (var i = 0; i < faces.length; i++) {
+          final face = faces[i];
+          print(
+              '[FACE_SERVICE] Face $i: bbox=${face.boundingBox}, headAngle=${face.headEulerAngleY?.toStringAsFixed(1)}°');
+        }
+      }
+
+      return faces;
+    } catch (e, stackTrace) {
+      print('[FACE_SERVICE] ❌ Error detecting faces: $e');
+      print('[FACE_SERVICE] Stack trace: $stackTrace');
+      // Return empty list on error instead of throwing
+      return [];
+    }
   }
 
   /// Check if face quality is good enough for recognition

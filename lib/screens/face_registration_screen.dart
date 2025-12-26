@@ -18,6 +18,20 @@ class FaceRegistrationScreen extends StatefulWidget {
   State<FaceRegistrationScreen> createState() => _FaceRegistrationScreenState();
 }
 
+// Liveness detection steps
+enum LivenessStep {
+  initial, // Initial face detection
+  blinkFirst, // Blink 1st time
+  blinkSecond, // Blink 2nd time
+  turnLeft, // Turn head left
+  turnRight, // Turn head right
+  tiltUp, // Tilt head up
+  tiltDown, // Tilt head down
+  smile, // Smile
+  neutral, // Neutral/serious expression
+  completed, // All steps completed
+}
+
 class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
   CameraController? _cameraController;
   final FaceDetectionService _faceDetectionService = FaceDetectionService();
@@ -31,8 +45,8 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
   bool _isUploading = false;
 
   List<File> _capturedImages = [];
-  final int _requiredImages = 15;
-  final int _minImages = 10;
+  final int _requiredImages = 8; // All from liveness auto-capture
+  final int _minImages = 8; // No manual capture needed
 
   String _statusMessage = 'Initializing camera...';
   Color _statusColor = Colors.orange;
@@ -44,6 +58,12 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
   double _lightingQuality = 0.0; // 0.0 to 1.0
   String _lightingStatus = 'Memeriksa...';
   bool _isLightingGood = false;
+
+  // Liveness detection
+  LivenessStep _currentLivenessStep = LivenessStep.initial;
+  bool _livenessCompleted = false;
+  bool _eyesWereOpen = false; // Track if eyes were open (for blink detection)
+  bool _isInLivenessMode = true; // Start with liveness check first
 
   @override
   void initState() {
@@ -135,9 +155,16 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
               print(
                   '[DEBUG] Status: Multiple faces detected (${faces.length})');
             } else {
-              _statusMessage = 'Wajah terdeteksi! Tap untuk ambil foto';
-              _statusColor = Colors.green;
-              print('[DEBUG] Status: Face detected and ready for capture');
+              // Single face detected
+              if (_isInLivenessMode && !_livenessCompleted) {
+                // Liveness detection mode
+                _performLivenessDetection(faces.first);
+              } else {
+                // Normal capture mode
+                _statusMessage = 'Wajah terdeteksi! Tap untuk ambil foto';
+                _statusColor = Colors.green;
+                print('[DEBUG] Status: Face detected and ready for capture');
+              }
             }
           });
         }
@@ -153,6 +180,393 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
         _isDetecting = false;
       }
     });
+  }
+
+  void _performLivenessDetection(Face face) {
+    final leftEyeOpen = face.leftEyeOpenProbability ?? 1.0;
+    final rightEyeOpen = face.rightEyeOpenProbability ?? 1.0;
+    final headYaw = face.headEulerAngleY ?? 0.0; // Left/Right turn
+    final smiling = face.smilingProbability ?? 0.0;
+
+    bool bothEyesOpen = leftEyeOpen > 0.5 && rightEyeOpen > 0.5;
+    bool bothEyesClosed = leftEyeOpen < 0.3 && rightEyeOpen < 0.3;
+    bool isLookingStraight = headYaw.abs() < 10;
+    bool isTurnedLeft = headYaw < -20;
+    bool isTurnedRight = headYaw > 20;
+    bool isSmiling = smiling > 0.7;
+
+    switch (_currentLivenessStep) {
+      case LivenessStep.initial:
+        if (bothEyesOpen) {
+          setState(() {
+            _statusMessage = 'Kedipkan mata Anda (1/2)';
+            _statusColor = Colors.blue;
+            _currentLivenessStep = LivenessStep.blinkFirst;
+            _eyesWereOpen = true;
+          });
+        } else {
+          setState(() {
+            _statusMessage = 'Buka mata Anda';
+            _statusColor = Colors.orange;
+          });
+        }
+        break;
+
+      case LivenessStep.blinkFirst:
+        if (_eyesWereOpen && bothEyesClosed) {
+          // Eyes closed after being open = blink detected
+          _eyesWereOpen = false;
+          print('[LIVENESS] First blink detected!');
+        } else if (!_eyesWereOpen && bothEyesOpen) {
+          // Eyes opened again
+          setState(() {
+            _statusMessage = 'Bagus! Kedipkan lagi (2/2)';
+            _statusColor = Colors.green;
+            _currentLivenessStep = LivenessStep.blinkSecond;
+            _eyesWereOpen = true;
+          });
+          print('[LIVENESS] First blink completed!');
+        } else if (bothEyesOpen) {
+          _eyesWereOpen = true;
+        }
+        break;
+
+      case LivenessStep.blinkSecond:
+        if (_eyesWereOpen && bothEyesClosed) {
+          // Second blink started
+          _eyesWereOpen = false;
+          print('[LIVENESS] Second blink detected!');
+        } else if (!_eyesWereOpen && bothEyesOpen) {
+          // Second blink completed - Continue to next step
+          _eyesWereOpen = true; // Reset state
+          setState(() {
+            _statusMessage = 'Sempurna! Mengambil foto... 📸';
+            _statusColor = Colors.green;
+            // DON'T set _livenessCompleted here - keep liveness detection running
+          });
+          print(
+              '[LIVENESS] Second blink completed - Liveness verification PASSED!');
+          print('[LIVENESS] ✅ Continuing to next liveness step...');
+
+          // Auto capture after brief delay
+          Future.delayed(const Duration(milliseconds: 500), () async {
+            if (mounted && !_isProcessing) {
+              await _captureImage();
+              // After capture successful, update step
+              if (mounted) {
+                setState(() {
+                  _currentLivenessStep = LivenessStep.turnLeft;
+                  print(
+                      '[LIVENESS] 📸 Photos captured: ${_capturedImages.length}/$_requiredImages');
+                });
+                // Show next instruction after brief delay
+                if (_capturedImages.length < _requiredImages) {
+                  Future.delayed(const Duration(milliseconds: 800), () {
+                    if (mounted) {
+                      setState(() {
+                        _statusMessage = 'Putar kepala ke KIRI';
+                        _statusColor = Colors.blue;
+                      });
+                    }
+                  });
+                }
+              }
+            }
+          });
+        } else if (bothEyesOpen) {
+          _eyesWereOpen = true;
+        }
+        break;
+
+      case LivenessStep.turnLeft:
+        if (isTurnedLeft) {
+          setState(() {
+            _statusMessage = 'Bagus! Mengambil foto... 📸';
+            _statusColor = Colors.green;
+          });
+          print('[LIVENESS] Head turned left - triggering auto capture!');
+
+          // Auto capture after brief delay
+          Future.delayed(const Duration(milliseconds: 500), () async {
+            if (mounted && !_isProcessing) {
+              await _captureImage();
+              // After capture successful, update step
+              if (mounted) {
+                setState(() {
+                  _currentLivenessStep = LivenessStep.turnRight;
+                  print(
+                      '[LIVENESS] Photos captured so far: ${_capturedImages.length}/$_requiredImages');
+                });
+                // Show next instruction after brief delay
+                if (_capturedImages.length < _requiredImages) {
+                  Future.delayed(const Duration(milliseconds: 800), () {
+                    if (mounted) {
+                      setState(() {
+                        _statusMessage = 'Putar kepala ke KANAN';
+                        _statusColor = Colors.blue;
+                      });
+                    }
+                  });
+                }
+              }
+            }
+          });
+        } else if (isLookingStraight) {
+          setState(() {
+            _statusMessage = 'Putar kepala ke KIRI';
+            _statusColor = Colors.blue;
+          });
+        }
+        break;
+
+      case LivenessStep.turnRight:
+        if (isTurnedRight) {
+          setState(() {
+            _statusMessage = 'Sempurna! Mengambil foto... 📸';
+            _statusColor = Colors.green;
+          });
+          print('[LIVENESS] Head turned right - triggering auto capture!');
+
+          // Auto capture after brief delay
+          Future.delayed(const Duration(milliseconds: 500), () async {
+            if (mounted && !_isProcessing) {
+              await _captureImage();
+              // After capture successful, update step
+              if (mounted) {
+                setState(() {
+                  _currentLivenessStep = LivenessStep.tiltUp;
+                  print(
+                      '[LIVENESS] 📸 Photos captured: ${_capturedImages.length}/$_requiredImages');
+                });
+                // Show next instruction after brief delay
+                if (_capturedImages.length < _requiredImages) {
+                  Future.delayed(const Duration(milliseconds: 800), () {
+                    if (mounted) {
+                      setState(() {
+                        _statusMessage = 'Dongakkan kepala ke ATAS';
+                        _statusColor = Colors.blue;
+                      });
+                    }
+                  });
+                }
+              }
+            }
+          });
+        } else if (isLookingStraight) {
+          setState(() {
+            _statusMessage = 'Putar kepala ke KANAN';
+            _statusColor = Colors.blue;
+          });
+        }
+        break;
+
+      case LivenessStep.tiltUp:
+        final headPitch = face.headEulerAngleX ?? 0.0; // Up/Down tilt
+        bool isTiltedUp = headPitch > 15; // POSITIVE = looking up (head back)
+
+        print(
+            '[LIVENESS] TiltUp check - HeadPitch: $headPitch, isTiltedUp: $isTiltedUp');
+
+        if (isTiltedUp) {
+          setState(() {
+            _statusMessage = 'Bagus! Mengambil foto... 📸';
+            _statusColor = Colors.green;
+          });
+          print('[LIVENESS] Head tilted up - triggering auto capture!');
+
+          // Auto capture after brief delay
+          Future.delayed(const Duration(milliseconds: 500), () async {
+            if (mounted && !_isProcessing) {
+              await _captureImage();
+              // After capture successful, update step
+              if (mounted) {
+                setState(() {
+                  _currentLivenessStep = LivenessStep.tiltDown;
+                  print(
+                      '[LIVENESS] 📸 Photos captured: ${_capturedImages.length}/$_requiredImages');
+                });
+                // Show next instruction after brief delay
+                if (_capturedImages.length < _requiredImages) {
+                  Future.delayed(const Duration(milliseconds: 800), () {
+                    if (mounted) {
+                      setState(() {
+                        _statusMessage = 'Tundukkan kepala ke BAWAH';
+                        _statusColor = Colors.blue;
+                      });
+                    }
+                  });
+                }
+              }
+            }
+          });
+        } else {
+          setState(() {
+            _statusMessage = 'Dongakkan kepala ke ATAS';
+            _statusColor = Colors.blue;
+          });
+        }
+        break;
+
+      case LivenessStep.tiltDown:
+        final headPitchDown = face.headEulerAngleX ?? 0.0;
+        bool isTiltedDown =
+            headPitchDown < -15; // NEGATIVE = looking down (head forward)
+
+        print(
+            '[LIVENESS] TiltDown check - HeadPitch: $headPitchDown, isTiltedDown: $isTiltedDown');
+
+        if (isTiltedDown) {
+          setState(() {
+            _statusMessage = 'Sempurna! Mengambil foto... 📸';
+            _statusColor = Colors.green;
+          });
+          print('[LIVENESS] Head tilted down - triggering auto capture!');
+
+          // Auto capture after brief delay
+          Future.delayed(const Duration(milliseconds: 500), () async {
+            if (mounted && !_isProcessing) {
+              await _captureImage();
+              // After capture successful, update step
+              if (mounted) {
+                setState(() {
+                  _currentLivenessStep = LivenessStep.smile;
+                  print(
+                      '[LIVENESS] 📸 Photos captured: ${_capturedImages.length}/$_requiredImages');
+                });
+                // Show next instruction after brief delay
+                if (_capturedImages.length < _requiredImages) {
+                  Future.delayed(const Duration(milliseconds: 800), () {
+                    if (mounted) {
+                      setState(() {
+                        _statusMessage = 'TERSENYUM 😊';
+                        _statusColor = Colors.blue;
+                      });
+                    }
+                  });
+                }
+              }
+            }
+          });
+        } else {
+          setState(() {
+            _statusMessage = 'Tundukkan kepala ke BAWAH';
+            _statusColor = Colors.blue;
+          });
+        }
+        break;
+
+      case LivenessStep.smile:
+        if (isSmiling) {
+          setState(() {
+            _statusMessage = 'Sempurna! Mengambil foto... 📸';
+            _statusColor = Colors.green;
+          });
+          print('[LIVENESS] Smile detected - triggering auto capture!');
+
+          // Auto capture after brief delay
+          Future.delayed(const Duration(milliseconds: 500), () async {
+            if (mounted && !_isProcessing) {
+              await _captureImage();
+              // After capture successful, go to neutral
+              if (mounted) {
+                setState(() {
+                  _currentLivenessStep = LivenessStep.neutral;
+                  print(
+                      '[LIVENESS] 📸 Photos captured: ${_capturedImages.length}/$_requiredImages');
+                });
+                // Show next instruction after brief delay
+                if (_capturedImages.length < _requiredImages) {
+                  Future.delayed(const Duration(milliseconds: 800), () {
+                    if (mounted) {
+                      setState(() {
+                        _statusMessage = 'Wajah NETRAL (jangan senyum)';
+                        _statusColor = Colors.blue;
+                      });
+                    }
+                  });
+                }
+              }
+            }
+          });
+        } else {
+          setState(() {
+            _statusMessage = 'TERSENYUM 😊';
+            _statusColor = Colors.blue;
+          });
+        }
+        break;
+
+      case LivenessStep.neutral:
+        bool isNotSmiling = smiling < 0.3; // Not smiling
+
+        if (isNotSmiling && bothEyesOpen) {
+          setState(() {
+            _statusMessage = 'Sempurna! Mengambil foto terakhir... 📸';
+            _statusColor = Colors.green;
+          });
+          print(
+              '[LIVENESS] Neutral face detected - triggering final auto capture!');
+
+          // Auto capture after brief delay
+          Future.delayed(const Duration(milliseconds: 500), () async {
+            if (mounted && !_isProcessing) {
+              await _captureImage();
+              // After capture successful, complete liveness
+              if (mounted) {
+                setState(() {
+                  _currentLivenessStep = LivenessStep.completed;
+                  _livenessCompleted = true;
+                  _isInLivenessMode = false;
+                  print(
+                      '[LIVENESS] All steps completed! Total photos: ${_capturedImages.length}/$_requiredImages');
+                });
+                // Show success message after capture
+                Future.delayed(const Duration(milliseconds: 800), () {
+                  if (mounted) {
+                    setState(() {
+                      _statusMessage = 'Verifikasi Liveness Berhasil! ✓';
+                      _statusColor = Colors.green;
+                    });
+
+                    // Continue with remaining captures
+                    if (_capturedImages.length < _requiredImages) {
+                      Future.delayed(const Duration(seconds: 2), () {
+                        if (mounted) {
+                          setState(() {
+                            _statusMessage =
+                                'Ambil ${_requiredImages - _capturedImages.length} foto lagi dari berbagai sudut';
+                            _statusColor = AppColors.primary;
+                          });
+                        }
+                      });
+                    }
+                  }
+                });
+              }
+            }
+          });
+        } else {
+          setState(() {
+            _statusMessage = 'TERSENYUM 😊';
+            _statusColor = Colors.blue;
+          });
+        }
+        break;
+
+      case LivenessStep.completed:
+        // All photos captured via liveness - ready to upload
+        setState(() {
+          if (_capturedImages.length >= _requiredImages) {
+            _statusMessage = 'Semua foto sudah diambil! Siap upload';
+            _statusColor = Colors.green;
+          } else {
+            _statusMessage =
+                'Liveness selesai! (${_capturedImages.length}/$_requiredImages)';
+            _statusColor = Colors.green;
+          }
+        });
+        break;
+    }
   }
 
   void _detectLightingQuality(CameraImage image) {
@@ -197,6 +611,9 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
   Future<void> _captureImage() async {
     print('[DEBUG] Capture button pressed!');
 
+    // Skip liveness check for auto-capture during liveness steps
+    // Manual capture after liveness will check via button visibility
+
     if (!_isLightingGood) {
       print(
           '[DEBUG] Cannot capture - lighting quality is poor: $_lightingStatus');
@@ -237,7 +654,8 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
         _statusColor = AppColors.primary;
       });
       print(
-          '[DEBUG] Total images captured: ${_capturedImages.length}/$_requiredImages');
+          '[DEBUG] ✅ Total images captured: ${_capturedImages.length}/$_requiredImages');
+      print('[DEBUG] 📊 Progress updated in UI');
 
       if (_capturedImages.length < _requiredImages) {
         await Future.delayed(const Duration(milliseconds: 500));
@@ -343,6 +761,30 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
     });
   }
 
+  IconData _getLivenessIcon() {
+    switch (_currentLivenessStep) {
+      case LivenessStep.initial:
+        return Icons.face;
+      case LivenessStep.blinkFirst:
+      case LivenessStep.blinkSecond:
+        return Icons.remove_red_eye;
+      case LivenessStep.turnLeft:
+        return Icons.arrow_back;
+      case LivenessStep.turnRight:
+        return Icons.arrow_forward;
+      case LivenessStep.tiltUp:
+        return Icons.arrow_upward;
+      case LivenessStep.tiltDown:
+        return Icons.arrow_downward;
+      case LivenessStep.smile:
+        return Icons.sentiment_satisfied_alt;
+      case LivenessStep.neutral:
+        return Icons.sentiment_neutral;
+      case LivenessStep.completed:
+        return Icons.check_circle;
+    }
+  }
+
   @override
   void dispose() {
     _cameraController?.dispose();
@@ -413,56 +855,60 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
           ),
 
           // CAPTURE BUTTON - placed AFTER bottom overlay so it's on top
-          Positioned(
-            bottom: 100,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: GestureDetector(
-                onTap:
-                    (_isProcessing || !_isLightingGood) ? null : _captureImage,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  width: 75,
-                  height: 75,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: (_isProcessing || !_isLightingGood)
-                        ? Colors.grey[400]
-                        : Colors.white,
-                    border: Border.all(
+          // During liveness: hidden/disabled
+          // After liveness: enabled for manual capture
+          if (_livenessCompleted && _capturedImages.length < _requiredImages)
+            Positioned(
+              bottom: 100,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: GestureDetector(
+                  onTap: (_isProcessing || !_isLightingGood)
+                      ? null
+                      : _captureImage,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    width: 75,
+                    height: 75,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
                       color: (_isProcessing || !_isLightingGood)
-                          ? Colors.grey[600]!
-                          : Colors.grey[300]!,
-                      width: 5,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.4),
-                        blurRadius: 12,
-                        spreadRadius: 1,
+                          ? Colors.grey[400]
+                          : Colors.white,
+                      border: Border.all(
+                        color: (_isProcessing || !_isLightingGood)
+                            ? Colors.grey[600]!
+                            : Colors.grey[300]!,
+                        width: 5,
                       ),
-                    ],
-                  ),
-                  child: _isProcessing
-                      ? const Padding(
-                          padding: EdgeInsets.all(18),
-                          child: CircularProgressIndicator(
-                            color: Colors.grey,
-                            strokeWidth: 3,
-                          ),
-                        )
-                      : Icon(
-                          Icons.camera_alt,
-                          size: 35,
-                          color: !_isLightingGood
-                              ? Colors.grey[600]
-                              : Colors.grey[700],
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.4),
+                          blurRadius: 12,
+                          spreadRadius: 1,
                         ),
+                      ],
+                    ),
+                    child: _isProcessing
+                        ? const Padding(
+                            padding: EdgeInsets.all(18),
+                            child: CircularProgressIndicator(
+                              color: Colors.grey,
+                              strokeWidth: 3,
+                            ),
+                          )
+                        : Icon(
+                            Icons.camera_alt,
+                            size: 35,
+                            color: !_isLightingGood
+                                ? Colors.grey[600]
+                                : Colors.grey[700],
+                          ),
+                  ),
                 ),
               ),
             ),
-          ),
 
           // Upload progress overlay
           if (_isUploading)
@@ -911,6 +1357,82 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
             ),
           ),
         ),
+
+        // Liveness status badge - center below dots
+        if (_isInLivenessMode && !_livenessCompleted)
+          Positioned(
+            top: 140,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: _statusColor.withOpacity(0.9),
+                      borderRadius: BorderRadius.circular(25),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.3),
+                          blurRadius: 8,
+                          spreadRadius: 1,
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          _getLivenessIcon(),
+                          color: Colors.white,
+                          size: 24,
+                        ),
+                        const SizedBox(width: 12),
+                        Flexible(
+                          child: Text(
+                            _statusMessage,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.6),
+                      borderRadius: BorderRadius.circular(15),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.camera_alt, color: Colors.white70, size: 14),
+                        SizedBox(width: 6),
+                        Text(
+                          'Auto Capture',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
 
         // Lighting quality badge - top left
         Positioned(
