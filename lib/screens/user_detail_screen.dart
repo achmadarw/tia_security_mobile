@@ -1078,13 +1078,13 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
               Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: (_faceImagesCount >= 8
+                  color: (_faceImagesCount >= 7
                           ? AppColors.success
                           : AppColors.warning)
                       .withOpacity(0.15),
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(
-                    color: (_faceImagesCount >= 8
+                    color: (_faceImagesCount >= 7
                             ? AppColors.success
                             : AppColors.warning)
                         .withOpacity(0.3),
@@ -1092,10 +1092,10 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
                   ),
                 ),
                 child: Icon(
-                  _faceImagesCount >= 8
+                  _faceImagesCount >= 7
                       ? Icons.check_circle
                       : Icons.warning_amber,
-                  color: _faceImagesCount >= 8
+                  color: _faceImagesCount >= 7
                       ? AppColors.success
                       : AppColors.warning,
                   size: 36,
@@ -1103,7 +1103,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
               ),
             ],
           ),
-          if (_faceImagesCount < 8) ...[
+          if (_faceImagesCount < 7) ...[
             const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(12),
@@ -1125,7 +1125,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Minimal 8 foto diperlukan untuk akurasi optimal',
+                      'Minimal 7 foto diperlukan untuk akurasi optimal',
                       style: TextStyle(
                         fontSize: 12,
                         color: AppColors.warning,
@@ -1156,11 +1156,11 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
                 }
               },
               icon: Icon(
-                _faceImagesCount >= 8 ? Icons.refresh : Icons.camera_alt,
+                _faceImagesCount >= 7 ? Icons.refresh : Icons.camera_alt,
                 size: 20,
               ),
               label: Text(
-                _faceImagesCount >= 8 ? 'UPDATE FOTO WAJAH' : 'DAFTARKAN WAJAH',
+                _faceImagesCount >= 7 ? 'UPDATE FOTO WAJAH' : 'DAFTARKAN WAJAH',
                 style: const TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.bold,

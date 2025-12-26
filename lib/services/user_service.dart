@@ -224,10 +224,13 @@ class UserService {
       // Add images
       for (int i = 0; i < images.length; i++) {
         final image = images[i];
+        // Extract filename from path (already renamed with descriptive format)
+        final filename = image.path.split('/').last;
         final multipartFile = await http.MultipartFile.fromPath(
           'images',
           image.path,
           contentType: MediaType('image', 'jpeg'),
+          filename: filename, // Use custom filename
         );
         request.files.add(multipartFile);
 
