@@ -1,6 +1,7 @@
 class ApiConfig {
   // Base URL - change this to your backend URL
-  static const String baseUrl = 'http://192.168.18.20:3008/api';
+  static const String baseUrl = 'http://192.168.0.98:3008/api';
+  static const String serverUrl = 'http://192.168.0.98:3008'; // Without /api
 
   // Auth endpoints
   static const String authLogin = '/auth/login';

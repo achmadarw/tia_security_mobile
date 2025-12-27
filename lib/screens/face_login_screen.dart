@@ -7,6 +7,7 @@ import 'package:geolocator/geolocator.dart';
 import '../services/face_detection_service.dart';
 import '../services/face_recognition_service.dart';
 import '../services/auth_service.dart';
+import '../utils/error_handler.dart';
 import '../config/theme.dart';
 import 'home_screen.dart';
 
@@ -29,6 +30,7 @@ class _FaceLoginScreenState extends State<FaceLoginScreen> {
   bool _isInitialized = false;
   bool _isProcessing = false;
   bool _isDetecting = false;
+  bool _hasError = false;
 
   String _statusMessage = 'Initializing camera...';
   Color _statusColor = Colors.orange;
@@ -112,15 +114,18 @@ class _FaceLoginScreenState extends State<FaceLoginScreen> {
               image.height.toDouble(),
             );
 
-            if (faces.isEmpty) {
-              _statusMessage = 'Posisikan wajah Anda di dalam frame';
-              _statusColor = Colors.orange;
-            } else if (faces.length > 1) {
-              _statusMessage = 'Hanya 1 wajah yang diperbolehkan';
-              _statusColor = Colors.red;
-            } else {
-              _statusMessage = 'Wajah terdeteksi! Tap untuk login';
-              _statusColor = Colors.green;
+            // Don't update status if there's an error showing
+            if (!_hasError) {
+              if (faces.isEmpty) {
+                _statusMessage = 'Posisikan wajah Anda di dalam frame';
+                _statusColor = Colors.orange;
+              } else if (faces.length > 1) {
+                _statusMessage = 'Hanya 1 wajah yang diperbolehkan';
+                _statusColor = Colors.red;
+              } else {
+                _statusMessage = 'Wajah terdeteksi! Tap untuk login';
+                _statusColor = Colors.green;
+              }
             }
           });
         }
@@ -288,29 +293,40 @@ class _FaceLoginScreenState extends State<FaceLoginScreen> {
         }
       } else {
         print('[FACE_LOGIN] FAILED: ${result['error']}');
-        _showError(result['error'] ?? 'Face not recognized');
-        _restartDetection();
+        _showError(result['error'] ?? 'Wajah tidak dikenali');
+        // Don't auto-restart, let user manually retry
       }
-    } catch (e) {
-      print('[FACE_LOGIN] EXCEPTION: $e');
-      print('[FACE_LOGIN] Stack trace: ${StackTrace.current}');
-      _showError('Error: $e');
-      _restartDetection();
+    } catch (e, stackTrace) {
+      ErrorHandler.logError('FACE_LOGIN', e, stackTrace: stackTrace);
+      _showError(ErrorHandler.getUserFriendlyMessage(e));
+      // Don't auto-restart, let user manually retry
     }
   }
 
   void _restartDetection() {
     setState(() {
       _isProcessing = false;
+      _hasError = false;
       _statusMessage = 'Position your face in the frame';
       _statusColor = AppColors.primary;
     });
     _startFaceDetection();
   }
 
-  void _showError(String message) {
+  void _showError(String message) async {
+    // Stop image stream to prevent status message from being overwritten
+    try {
+      if (_cameraController != null &&
+          _cameraController!.value.isStreamingImages) {
+        await _cameraController!.stopImageStream();
+      }
+    } catch (e) {
+      print('[FACE_LOGIN] Error stopping stream: $e');
+    }
+
     setState(() {
       _isProcessing = false; // Remove overlay so error is visible
+      _hasError = true;
       _statusMessage = message;
       _statusColor = Colors.red;
     });
@@ -318,6 +334,7 @@ class _FaceLoginScreenState extends State<FaceLoginScreen> {
 
   void _showSuccess(String message) {
     setState(() {
+      _hasError = false;
       _statusMessage = message;
       _statusColor = Colors.green;
     });
@@ -420,14 +437,55 @@ class _FaceLoginScreenState extends State<FaceLoginScreen> {
                         color: _statusColor.withOpacity(0.9),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: Text(
-                        _statusMessage,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        textAlign: TextAlign.center,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Row(
+                            children: [
+                              if (_hasError)
+                                const Padding(
+                                  padding: EdgeInsets.only(right: 8),
+                                  child: Icon(
+                                    Icons.error_outline,
+                                    color: Colors.white,
+                                    size: 24,
+                                  ),
+                                ),
+                              Expanded(
+                                child: Text(
+                                  _statusMessage,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                            ],
+                          ),
+                          // Retry button for errors
+                          if (_hasError)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 12),
+                              child: ElevatedButton.icon(
+                                onPressed: _restartDetection,
+                                icon: const Icon(Icons.refresh, size: 18),
+                                label: const Text('Coba Lagi'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.white,
+                                  foregroundColor: Colors.red.shade700,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 20,
+                                    vertical: 8,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                   ),
