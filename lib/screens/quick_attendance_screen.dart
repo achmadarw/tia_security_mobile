@@ -480,7 +480,8 @@ class _QuickAttendanceScreenState extends State<QuickAttendanceScreen> {
           TextButton(
             onPressed: () {
               Navigator.pop(context); // Close dialog
-              Navigator.pop(context); // Close attendance screen
+              Navigator.pop(
+                  context, true); // Close attendance screen with result=true
             },
             child: const Text('OK'),
           ),

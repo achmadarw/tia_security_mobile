@@ -27,6 +27,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   late Animation<double> _scaleAnimation;
   int _selectedIndex = 0;
   bool _isCheckedIn = false;
+  String _statusText = 'Belum Check-in';
+  String _checkInTime = '--:--';
+  String _checkOutTime = '--:--';
+  String _totalTime = '0j 0m';
+  String _currentDuration = '--';
+  bool _isLoadingAttendance = false;
+  int _shiftCount = 0;
+  List<dynamic> _shifts = [];
+  Map<String, dynamic>? _currentShift;
+  List<dynamic> _completedShifts = [];
+  bool _isCardExpanded = false; // For expandable card
 
   @override
   void initState() {
@@ -49,6 +60,96 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
     _fadeController.forward();
     _scaleController.forward();
+    _fetchTodayAttendance();
+  }
+
+  Future<void> _fetchTodayAttendance() async {
+    if (_isLoadingAttendance) return;
+
+    setState(() {
+      _isLoadingAttendance = true;
+    });
+
+    try {
+      final data = await widget.authService.getTodayAttendance();
+
+      if (data != null && mounted) {
+        setState(() {
+          // Multiple shifts support
+          _shifts = data['shifts'] ?? [];
+          _shiftCount = data['shiftCount'] ?? 0;
+          _isCheckedIn = data['isCheckedIn'] ?? false;
+          _currentShift = data['currentShift'];
+          _completedShifts = data['completedShifts'] ?? [];
+
+          // Display CURRENT SHIFT (not first shift)
+          if (_currentShift != null) {
+            // Active shift
+            final checkIn = _currentShift!['checkIn'];
+            if (checkIn != null) {
+              final checkInDate =
+                  DateTime.parse(checkIn['created_at']).toLocal();
+              _checkInTime = DateFormat('HH:mm').format(checkInDate);
+
+              // Calculate live duration
+              final now = DateTime.now();
+              final diff = now.difference(checkInDate);
+              final hours = diff.inHours;
+              final minutes = diff.inMinutes % 60;
+              _currentDuration = '${hours}j ${minutes}m';
+            }
+            _checkOutTime = '--:--';
+            _statusText =
+                _shiftCount > 1 ? 'Shift $_shiftCount Aktif' : 'Shift 1 Aktif';
+          } else if (_completedShifts.isNotEmpty) {
+            // Between shifts or all completed
+            final lastShift = _completedShifts.last;
+            final lastCheckIn = lastShift['checkIn'];
+            final lastCheckOut = lastShift['checkOut'];
+
+            if (lastCheckIn != null) {
+              final checkInDate =
+                  DateTime.parse(lastCheckIn['created_at']).toLocal();
+              _checkInTime = DateFormat('HH:mm').format(checkInDate);
+            }
+
+            if (lastCheckOut != null) {
+              final checkOutDate =
+                  DateTime.parse(lastCheckOut['created_at']).toLocal();
+              _checkOutTime = DateFormat('HH:mm').format(checkOutDate);
+            }
+
+            final hours = lastShift['hours'] ?? 0;
+            final minutes = lastShift['minutes'] ?? 0;
+            _currentDuration = '${hours}j ${minutes}m';
+
+            if (_shiftCount > 1) {
+              _statusText = 'Semua Shift Selesai';
+            } else {
+              _statusText = 'Sedang Istirahat';
+            }
+          } else {
+            _checkInTime = '--:--';
+            _checkOutTime = '--:--';
+            _currentDuration = '--';
+            _statusText = 'Belum Check-in';
+          }
+
+          // Total from all shifts
+          final hours = data['totalHours'] ?? 0;
+          final minutes = data['totalMinutes'] ?? 0;
+          _totalTime = '${hours}j ${minutes}m';
+        });
+      }
+    } catch (e) {
+      print('Error fetching attendance: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingAttendance = false;
+        });
+      }
+    }
   }
 
   @override
@@ -80,8 +181,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       extendBodyBehindAppBar: true,
       body: RefreshIndicator(
         onRefresh: () async {
-          await Future.delayed(const Duration(seconds: 1));
-          setState(() {});
+          await _fetchTodayAttendance();
         },
         child: CustomScrollView(
           physics: const BouncingScrollPhysics(),
@@ -321,118 +421,473 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   Widget _buildTodayStatusCard() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final primaryColor = Theme.of(context).colorScheme.primary;
+
+    // Dynamic color based on status
+    Color cardColor;
+    Color statusIconColor;
+    IconData statusIcon;
+
+    if (_isCheckedIn) {
+      // Active shift - Green
+      cardColor = isDark ? Colors.green.shade900 : Colors.green.shade600;
+      statusIconColor = Colors.green;
+      statusIcon = Icons.radio_button_checked;
+    } else if (_shiftCount > 0) {
+      // Between shifts or completed - Blue
+      cardColor = isDark ? AppColors.darkCard : AppColors.primary;
+      statusIconColor = Colors.blue;
+      statusIcon = _shiftCount > 1 ? Icons.check_circle : Icons.pause_circle;
+    } else {
+      // Not started - Grey
+      cardColor = isDark ? AppColors.darkCard : Colors.grey.shade600;
+      statusIconColor = Colors.grey;
+      statusIcon = Icons.schedule;
+    }
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-      child: Container(
-        padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-          color: isDark ? AppColors.darkCard : primaryColor,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color:
-                isDark ? AppColors.borderDark : Colors.white.withOpacity(0.3),
-            width: 1.5,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: isDark
-                  ? Colors.black.withOpacity(0.3)
-                  : primaryColor.withOpacity(0.3),
-              blurRadius: 16,
-              offset: const Offset(0, 6),
+      child: GestureDetector(
+        onTap: _shiftCount > 1
+            ? () {
+                setState(() {
+                  _isCardExpanded = !_isCardExpanded;
+                });
+              }
+            : null,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: cardColor,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color:
+                  isDark ? AppColors.borderDark : Colors.white.withOpacity(0.3),
+              width: 1.5,
             ),
-          ],
-        ),
-        child: Column(
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+            boxShadow: [
+              BoxShadow(
+                color: isDark
+                    ? Colors.black.withOpacity(0.3)
+                    : cardColor.withOpacity(0.3),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              // Status header with icon
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? statusIconColor.withOpacity(0.2)
+                          : Colors.white.withOpacity(0.25),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      statusIcon,
+                      color: isDark ? statusIconColor : Colors.white,
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _statusText,
+                          style: TextStyle(
+                            color: isDark
+                                ? AppColors.darkTextPrimary
+                                : Colors.white,
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                        if (_isCheckedIn)
+                          Text(
+                            'Check-in: $_checkInTime',
+                            style: TextStyle(
+                              color: isDark
+                                  ? AppColors.darkTextSecondary
+                                  : Colors.white.withOpacity(0.9),
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        if (!_isCheckedIn && _shiftCount > 0)
+                          Text(
+                            'Shift Terakhir: $_checkInTime - $_checkOutTime',
+                            style: TextStyle(
+                              color: isDark
+                                  ? AppColors.darkTextSecondary
+                                  : Colors.white.withOpacity(0.9),
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 20),
+              const Divider(color: Colors.white24, height: 1),
+              const SizedBox(height: 20),
+
+              // Current shift duration or last shift info
+              if (_isCheckedIn)
+                Row(
                   children: [
-                    Text(
-                      'Status Hari Ini',
-                      style: TextStyle(
-                        color: isDark
-                            ? AppColors.darkTextSecondary
-                            : Colors.white.withOpacity(0.9),
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
+                    Expanded(
+                      child: _buildStatusInfo(
+                        'Durasi',
+                        _currentDuration,
+                        Icons.timer_outlined,
                       ),
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      _isCheckedIn ? 'Sudah Check-in' : 'Belum Check-in',
-                      style: TextStyle(
-                        color:
-                            isDark ? AppColors.darkTextPrimary : Colors.white,
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 0.5,
+                    if (_completedShifts.isNotEmpty) ...[
+                      Container(
+                        width: 2,
+                        height: 50,
+                        color: isDark
+                            ? AppColors.dividerDark
+                            : Colors.white.withOpacity(0.4),
+                      ),
+                      Expanded(
+                        child: _buildStatusInfo(
+                          'Shift ${_completedShifts.length}',
+                          '${_completedShifts.last['hours'] ?? 0}j ${_completedShifts.last['minutes'] ?? 0}m',
+                          Icons.history,
+                        ),
+                      ),
+                    ],
+                    Container(
+                      width: 2,
+                      height: 50,
+                      color: isDark
+                          ? AppColors.dividerDark
+                          : Colors.white.withOpacity(0.4),
+                    ),
+                    Expanded(
+                      child: _buildStatusInfo(
+                        'Total',
+                        _totalTime,
+                        Icons.access_time,
+                      ),
+                    ),
+                  ],
+                )
+              else
+                Row(
+                  children: [
+                    if (_shiftCount > 0) ...[
+                      Expanded(
+                        child: _buildStatusInfo(
+                          'Durasi',
+                          _currentDuration,
+                          Icons.timer_outlined,
+                        ),
+                      ),
+                      Container(
+                        width: 2,
+                        height: 50,
+                        color: isDark
+                            ? AppColors.dividerDark
+                            : Colors.white.withOpacity(0.4),
+                      ),
+                    ],
+                    Expanded(
+                      child: _buildStatusInfo(
+                        'Total Hari Ini',
+                        _totalTime,
+                        Icons.access_time,
                       ),
                     ),
                   ],
                 ),
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: isDark
-                        ? AppColors.darkPrimary.withOpacity(0.3)
-                        : Colors.white.withOpacity(0.25),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    _isCheckedIn ? Icons.check_circle : Icons.schedule,
-                    color: isDark ? AppColors.darkPrimary : Colors.white,
-                    size: 36,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildStatusInfo(
-                    'Check-in',
-                    _isCheckedIn ? '08:00' : '--:--',
-                    Icons.login,
-                  ),
-                ),
-                Container(
-                  width: 2,
-                  height: 50,
-                  color: isDark
-                      ? AppColors.dividerDark
-                      : Colors.white.withOpacity(0.4),
-                ),
-                Expanded(
-                  child: _buildStatusInfo(
-                    'Check-out',
-                    '--:--',
-                    Icons.logout,
-                  ),
-                ),
-                Container(
-                  width: 2,
-                  height: 50,
-                  color: isDark
-                      ? AppColors.dividerDark
-                      : Colors.white.withOpacity(0.4),
-                ),
-                Expanded(
-                  child: _buildStatusInfo(
-                    'Total',
-                    '0j 0m',
-                    Icons.timer,
+
+              // Multiple shift indicator with expand hint
+              if (_shiftCount > 1)
+                Padding(
+                  padding: const EdgeInsets.only(top: 16),
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? AppColors.darkPrimary.withOpacity(0.2)
+                          : Colors.white.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: isDark
+                            ? AppColors.darkPrimary.withOpacity(0.4)
+                            : Colors.white.withOpacity(0.4),
+                        width: 1,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.work_history,
+                          color: isDark ? AppColors.darkPrimary : Colors.white,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '$_shiftCount Shift Hari Ini',
+                          style: TextStyle(
+                            color: isDark
+                                ? AppColors.darkTextPrimary
+                                : Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Icon(
+                          _isCardExpanded
+                              ? Icons.expand_less
+                              : Icons.expand_more,
+                          color: isDark ? AppColors.darkPrimary : Colors.white,
+                          size: 20,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ],
-            ),
-          ],
+
+              // Expanded shift details
+              if (_isCardExpanded && _shifts.isNotEmpty)
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeInOut,
+                  child: Column(
+                    children: [
+                      const SizedBox(height: 16),
+                      const Divider(color: Colors.white24, height: 1),
+                      const SizedBox(height: 16),
+                      ...List.generate(_shifts.length, (index) {
+                        final shift = _shifts[index];
+                        final checkIn = shift['checkIn'];
+                        final checkOut = shift['checkOut'];
+                        final isActive = checkOut == null;
+
+                        String checkInTime = '--:--';
+                        String checkOutTime = '--:--';
+                        String duration = '--';
+
+                        if (checkIn != null) {
+                          final checkInDate =
+                              DateTime.parse(checkIn['created_at']).toLocal();
+                          checkInTime = DateFormat('HH:mm').format(checkInDate);
+
+                          if (checkOut != null) {
+                            final checkOutDate =
+                                DateTime.parse(checkOut['created_at'])
+                                    .toLocal();
+                            checkOutTime =
+                                DateFormat('HH:mm').format(checkOutDate);
+                            duration =
+                                '${shift['hours'] ?? 0}j ${shift['minutes'] ?? 0}m';
+                          } else {
+                            // Active shift - calculate live duration
+                            final now = DateTime.now();
+                            final diff = now.difference(checkInDate);
+                            duration =
+                                '${diff.inHours}j ${diff.inMinutes % 60}m';
+                          }
+                        }
+
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: isDark
+                                  ? (isActive
+                                      ? Colors.green.shade900.withOpacity(0.3)
+                                      : Colors.white.withOpacity(0.05))
+                                  : (isActive
+                                      ? Colors.white.withOpacity(0.3)
+                                      : Colors.white.withOpacity(0.15)),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: isDark
+                                    ? (isActive
+                                        ? Colors.green.withOpacity(0.4)
+                                        : Colors.white.withOpacity(0.2))
+                                    : (isActive
+                                        ? Colors.white.withOpacity(0.6)
+                                        : Colors.white.withOpacity(0.3)),
+                                width: 1,
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(
+                                      isActive
+                                          ? Icons.radio_button_checked
+                                          : Icons.check_circle_outline,
+                                      color: isDark
+                                          ? (isActive
+                                              ? Colors.green
+                                              : AppColors.darkTextPrimary)
+                                          : Colors.white,
+                                      size: 20,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Shift ${index + 1}',
+                                      style: TextStyle(
+                                        color: isDark
+                                            ? AppColors.darkTextPrimary
+                                            : Colors.white,
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: isDark
+                                            ? (isActive
+                                                ? Colors.green.withOpacity(0.2)
+                                                : Colors.grey.withOpacity(0.2))
+                                            : (isActive
+                                                ? Colors.white.withOpacity(0.3)
+                                                : Colors.white
+                                                    .withOpacity(0.2)),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Text(
+                                        isActive ? 'Aktif' : 'Selesai',
+                                        style: TextStyle(
+                                          color: isDark
+                                              ? (isActive
+                                                  ? Colors.green
+                                                  : AppColors.darkTextSecondary)
+                                              : Colors.white,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Check-in',
+                                            style: TextStyle(
+                                              color: isDark
+                                                  ? AppColors.darkTextSecondary
+                                                  : Colors.white70,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            checkInTime,
+                                            style: TextStyle(
+                                              color: isDark
+                                                  ? AppColors.darkTextPrimary
+                                                  : Colors.white,
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Check-out',
+                                            style: TextStyle(
+                                              color: isDark
+                                                  ? AppColors.darkTextSecondary
+                                                  : Colors.white70,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            checkOutTime,
+                                            style: TextStyle(
+                                              color: isDark
+                                                  ? AppColors.darkTextPrimary
+                                                  : Colors.white,
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Durasi',
+                                            style: TextStyle(
+                                              color: isDark
+                                                  ? AppColors.darkTextSecondary
+                                                  : Colors.white70,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            duration,
+                                            style: TextStyle(
+                                              color: isDark
+                                                  ? AppColors.darkTextPrimary
+                                                  : Colors.white,
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }),
+                    ],
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -588,16 +1043,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     final isAdmin = user?.role == 'admin';
 
     final actions = [
-      _ActionData('Check In', Icons.login, AppColors.success, () {
-        setState(() => _isCheckedIn = true);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('✓ Check-in berhasil!')),
+      _ActionData('Absensi', Icons.face_outlined, AppColors.primary, () async {
+        final result = await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => QuickAttendanceScreen(
+              authService: widget.authService,
+            ),
+          ),
         );
-      }),
-      _ActionData('Check Out', Icons.logout, AppColors.error, () {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Check-out - Coming Soon')),
-        );
+        // Refresh attendance data when returning
+        if (result == true) {
+          _fetchTodayAttendance();
+        }
       }),
       _ActionData('Laporan', Icons.description, AppColors.primary, () {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -922,8 +1380,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       child: FloatingActionButton(
         elevation: 0,
         backgroundColor: Colors.transparent,
-        onPressed: () {
-          Navigator.push(
+        onPressed: () async {
+          final result = await Navigator.push(
             context,
             MaterialPageRoute(
               builder: (context) => QuickAttendanceScreen(
@@ -931,6 +1389,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ),
             ),
           );
+          // Refresh attendance data when returning
+          if (result == true && mounted) {
+            _fetchTodayAttendance();
+          }
         },
         child: Icon(
           Icons.face,

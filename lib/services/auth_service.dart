@@ -174,6 +174,31 @@ class AuthService {
     await prefs.remove('refresh_token');
   }
 
+  // Get today's attendance
+  Future<Map<String, dynamic>?> getTodayAttendance() async {
+    if (_accessToken == null) return null;
+
+    try {
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}/attendance/today'),
+        headers: {
+          'Authorization': 'Bearer $_accessToken',
+          'Content-Type': 'application/json',
+        },
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      } else {
+        print('Get today attendance error: ${response.statusCode}');
+        return null;
+      }
+    } catch (e) {
+      print('Get today attendance error: $e');
+      return null;
+    }
+  }
+
   // Get auth headers
   Map<String, String> getAuthHeaders() {
     return {
