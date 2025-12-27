@@ -1417,14 +1417,15 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
           ),
         ),
 
-        // Face-shaped frame - WHITE border
+        // Face-shaped frame - Dynamic color: green when face detected, white otherwise
         Center(
           child: SizedBox(
             width: MediaQuery.of(context).size.width * 0.85,
             height: MediaQuery.of(context).size.height * 0.55,
             child: CustomPaint(
               painter: FaceFramePainter(
-                frameColor: Colors.white,
+                frameColor:
+                    _detectedFaces.isNotEmpty ? Colors.green : Colors.white,
                 strokeWidth: 4.0,
               ),
             ),
