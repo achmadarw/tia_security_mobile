@@ -379,19 +379,18 @@ class _FaceLoginScreenState extends State<FaceLoginScreen> {
                   ),
                 ),
 
-              // Face guide overlay
+              // Face-shaped frame overlay (same as registration)
               Center(
-                child: Container(
-                  width: 280,
-                  height: 350,
-                  decoration: BoxDecoration(
-                    border: Border.all(
-                      color: _detectedFaces.isNotEmpty
+                child: SizedBox(
+                  width: MediaQuery.of(context).size.width * 0.85,
+                  height: MediaQuery.of(context).size.height * 0.55,
+                  child: CustomPaint(
+                    painter: FaceFramePainter(
+                      frameColor: _detectedFaces.isNotEmpty
                           ? Colors.green
                           : Colors.white,
-                      width: 3,
+                      strokeWidth: 4.0,
                     ),
-                    borderRadius: BorderRadius.circular(180),
                   ),
                 ),
               ),
@@ -545,5 +544,93 @@ class _FaceLoginScreenState extends State<FaceLoginScreen> {
         ),
       ),
     );
+  }
+}
+
+// Custom painter for face-shaped frame (same as registration)
+class FaceFramePainter extends CustomPainter {
+  final Color frameColor;
+  final double strokeWidth;
+
+  FaceFramePainter({
+    required this.frameColor,
+    required this.strokeWidth,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = frameColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    final path = Path();
+
+    // Create smooth face outline similar to face mesh border
+    final centerX = size.width / 2;
+    final centerY = size.height / 2;
+
+    // Start from top center of head - perfectly rounded dome
+    path.moveTo(centerX, size.height * 0.06);
+
+    // Top-right forehead curve - smooth arc WITHOUT dip
+    path.cubicTo(
+      size.width * 0.58, size.height * 0.055, // Control point 1 - slightly UP
+      size.width * 0.75, size.height * 0.10, // Control point 2 - gradual down
+      size.width * 0.89, size.height * 0.25, // End point
+    );
+
+    // Right temple to cheekbone
+    path.cubicTo(
+      size.width * 0.95, size.height * 0.38, // Control point 1
+      size.width * 0.94, size.height * 0.54, // Control point 2
+      size.width * 0.90, size.height * 0.68, // End point
+    );
+
+    // Right cheek to jaw
+    path.cubicTo(
+      size.width * 0.85, size.height * 0.80, // Control point 1
+      size.width * 0.75, size.height * 0.90, // Control point 2
+      size.width * 0.62, size.height * 0.96, // End point
+    );
+
+    // Right jaw to chin
+    path.cubicTo(
+      size.width * 0.55, size.height * 0.99, // Control point 1
+      size.width * 0.45, size.height * 0.99, // Control point 2
+      size.width * 0.38, size.height * 0.96, // End point (chin)
+    );
+
+    // Left jaw
+    path.cubicTo(
+      size.width * 0.25, size.height * 0.90, // Control point 1
+      size.width * 0.15, size.height * 0.80, // Control point 2
+      size.width * 0.10, size.height * 0.68, // End point
+    );
+
+    // Left cheekbone to temple
+    path.cubicTo(
+      size.width * 0.06, size.height * 0.54, // Control point 1
+      size.width * 0.05, size.height * 0.38, // Control point 2
+      size.width * 0.11, size.height * 0.25, // End point
+    );
+
+    // Left forehead - smooth arc WITHOUT dip, mirror of right side
+    path.cubicTo(
+      size.width * 0.25, size.height * 0.10, // Control point 1 - gradual down
+      size.width * 0.42, size.height * 0.055, // Control point 2 - slightly UP
+      centerX, size.height * 0.06, // Back to top
+    );
+
+    // Draw the smooth face outline
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant FaceFramePainter oldDelegate) {
+    return oldDelegate.frameColor != frameColor ||
+        oldDelegate.strokeWidth != strokeWidth;
   }
 }
