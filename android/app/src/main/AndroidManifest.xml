@@ -1,4 +1,14 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Location permissions for attendance tracking -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    
+    <!-- Camera permissions for face recognition -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    
+    <!-- Internet permission -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    
     <application
         android:label="tia_mobile"
         android:name="${applicationName}"

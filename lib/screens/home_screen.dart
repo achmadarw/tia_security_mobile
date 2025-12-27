@@ -8,7 +8,7 @@ import '../config/theme.dart';
 import '../config/theme_provider.dart';
 import 'login_screen.dart';
 import 'users_screen.dart';
-import 'face_login_screen.dart';
+import 'quick_attendance_screen.dart';
 import 'profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -926,7 +926,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => FaceLoginScreen(
+              builder: (context) => QuickAttendanceScreen(
                 authService: widget.authService,
               ),
             ),
