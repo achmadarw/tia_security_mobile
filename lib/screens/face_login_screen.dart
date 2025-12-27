@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:ui';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
@@ -10,6 +11,16 @@ import '../services/auth_service.dart';
 import '../utils/error_handler.dart';
 import '../config/theme.dart';
 import 'home_screen.dart';
+
+// Quick liveness detection steps for login
+enum LivenessStep {
+  initial, // Initial face detection
+  blinkFirst, // First blink
+  blinkSecond, // Second blink + capture
+  turnLeft, // Turn head left (random)
+  turnRight, // Turn head right (random)
+  completed, // Liveness completed
+}
 
 class FaceLoginScreen extends StatefulWidget {
   final AuthService authService;
@@ -36,7 +47,13 @@ class _FaceLoginScreenState extends State<FaceLoginScreen> {
   Color _statusColor = Colors.orange;
 
   List<Face> _detectedFaces = [];
-  Size? _imageSize;
+
+  // Liveness detection
+  LivenessStep _currentLivenessStep = LivenessStep.initial;
+  bool _eyesWereOpen = false;
+  List<File> _capturedImages = [];
+  int _currentStep = 0;
+  final int _totalSteps = 2; // blink + turn
 
   @override
   void initState() {
@@ -109,23 +126,10 @@ class _FaceLoginScreenState extends State<FaceLoginScreen> {
         if (mounted) {
           setState(() {
             _detectedFaces = faces;
-            _imageSize = Size(
-              image.width.toDouble(),
-              image.height.toDouble(),
-            );
 
             // Don't update status if there's an error showing
-            if (!_hasError) {
-              if (faces.isEmpty) {
-                _statusMessage = 'Posisikan wajah Anda di dalam frame';
-                _statusColor = Colors.orange;
-              } else if (faces.length > 1) {
-                _statusMessage = 'Hanya 1 wajah yang diperbolehkan';
-                _statusColor = Colors.red;
-              } else {
-                _statusMessage = 'Wajah terdeteksi! Tap untuk login';
-                _statusColor = Colors.green;
-              }
+            if (!_hasError && !_isProcessing) {
+              _processLivenessDetection(faces);
             }
           });
         }
@@ -143,27 +147,215 @@ class _FaceLoginScreenState extends State<FaceLoginScreen> {
     });
   }
 
-  Future<void> _captureAndRecognize() async {
+  void _processLivenessDetection(List<Face> faces) {
+    // No face detected
+    if (faces.isEmpty) {
+      _statusMessage = 'Posisikan wajah Anda di dalam frame';
+      _statusColor = Colors.orange;
+      return;
+    }
+
+    // Multiple faces detected
+    if (faces.length > 1) {
+      _statusMessage = 'Hanya 1 wajah yang diperbolehkan';
+      _statusColor = Colors.red;
+      return;
+    }
+
+    final face = faces.first;
+
+    switch (_currentLivenessStep) {
+      case LivenessStep.initial:
+        // Face detected, start liveness with blink
+        _currentLivenessStep = LivenessStep.blinkFirst;
+        _statusMessage = 'Kedipkan mata Anda';
+        _statusColor = Colors.blue;
+        break;
+
+      case LivenessStep.blinkFirst:
+        _detectBlink(face, isFirstBlink: true);
+        break;
+
+      case LivenessStep.blinkSecond:
+        _detectBlink(face, isFirstBlink: false);
+        break;
+
+      case LivenessStep.turnLeft:
+        _detectHeadTurn(face, isLeft: true);
+        break;
+
+      case LivenessStep.turnRight:
+        _detectHeadTurn(face, isLeft: false);
+        break;
+
+      case LivenessStep.completed:
+        // Already completed, processing
+        break;
+    }
+  }
+
+  void _detectBlink(Face face, {required bool isFirstBlink}) {
+    final leftEyeProb = face.leftEyeOpenProbability ?? 1.0;
+    final rightEyeProb = face.rightEyeOpenProbability ?? 1.0;
+
+    // Eyes are open
+    if (leftEyeProb > 0.7 && rightEyeProb > 0.7) {
+      if (!_eyesWereOpen) {
+        _eyesWereOpen = true;
+        _statusMessage =
+            isFirstBlink ? 'Kedipkan mata Anda' : 'Kedipkan sekali lagi';
+        _statusColor = Colors.blue;
+      }
+    }
+
+    // Eyes are closed (blink detected!)
+    if (_eyesWereOpen && leftEyeProb < 0.3 && rightEyeProb < 0.3) {
+      if (isFirstBlink) {
+        // First blink completed
+        _currentLivenessStep = LivenessStep.blinkSecond;
+        _eyesWereOpen = false;
+        _statusMessage = 'Bagus! Kedipkan sekali lagi';
+        _statusColor = Colors.green;
+      } else {
+        // Second blink completed - auto capture after eyes open
+        _eyesWereOpen = false;
+        _waitForEyesOpenThenCapture();
+      }
+    }
+  }
+
+  Future<void> _waitForEyesOpenThenCapture() async {
+    // Wait a bit for eyes to open again
+    await Future.delayed(const Duration(milliseconds: 500));
+
+    if (!mounted) return;
+
+    if (_detectedFaces.isNotEmpty) {
+      final face = _detectedFaces.first;
+      final leftEyeProb = face.leftEyeOpenProbability ?? 0.0;
+      final rightEyeProb = face.rightEyeOpenProbability ?? 0.0;
+
+      // Eyes open, capture!
+      if (leftEyeProb > 0.7 && rightEyeProb > 0.7) {
+        await _captureStep(
+            restartStream: true); // Restart for head turn detection
+
+        if (!mounted) return;
+
+        setState(() {
+          _currentStep++;
+
+          // Proceed to random head turn
+          _currentLivenessStep = Random().nextBool()
+              ? LivenessStep.turnLeft
+              : LivenessStep.turnRight;
+
+          _statusMessage = _currentLivenessStep == LivenessStep.turnLeft
+              ? 'Palingkan kepala ke KIRI'
+              : 'Palingkan kepala ke KANAN';
+          _statusColor = Colors.blue;
+        });
+      }
+    }
+  }
+
+  void _detectHeadTurn(Face face, {required bool isLeft}) {
+    final headYaw = face.headEulerAngleY ?? 0.0;
+
+    if (isLeft) {
+      // Detect left turn
+      if (headYaw < -20) {
+        _captureStepAndComplete();
+      } else if (headYaw < -10) {
+        _statusMessage = 'Palingkan lebih ke KIRI';
+        _statusColor = Colors.orange;
+      }
+    } else {
+      // Detect right turn
+      if (headYaw > 20) {
+        _captureStepAndComplete();
+      } else if (headYaw > 10) {
+        _statusMessage = 'Palingkan lebih ke KANAN';
+        _statusColor = Colors.orange;
+      }
+    }
+  }
+
+  Future<void> _captureStep({bool restartStream = true}) async {
+    try {
+      // Stop image stream temporarily
+      if (_cameraController != null &&
+          _cameraController!.value.isStreamingImages) {
+        await _cameraController!.stopImageStream();
+      }
+
+      // Capture image
+      final XFile imageFile = await _cameraController!.takePicture();
+      final File file = File(imageFile.path);
+      _capturedImages.add(file);
+
+      print(
+          '[LIVENESS] Captured image ${_capturedImages.length}: ${file.path}');
+
+      // Restart image stream only if requested
+      if (restartStream) {
+        await Future.delayed(const Duration(milliseconds: 300));
+        _startFaceDetection();
+      }
+    } catch (e) {
+      print('[LIVENESS] Capture error: $e');
+      if (mounted) {
+        _showError('Gagal mengambil foto. Silakan coba lagi.');
+      }
+    }
+  }
+
+  Future<void> _captureStepAndComplete() async {
+    // Don't restart stream on final capture
+    await _captureStep(restartStream: false);
+
+    if (!mounted) return;
+
+    setState(() {
+      _currentStep++;
+      _currentLivenessStep = LivenessStep.completed;
+    });
+
+    // Process login with captured images
+    await _processLoginWithLiveness();
+  }
+
+  Future<void> _processLoginWithLiveness() async {
     if (_isProcessing) return;
 
-    print('[FACE_LOGIN] === Starting face recognition process ===');
+    print('[FACE_LOGIN] === Processing login with liveness ===');
+    print('[FACE_LOGIN] Captured images: ${_capturedImages.length}');
+
+    if (!mounted) return;
 
     setState(() {
       _isProcessing = true;
-      _statusMessage = 'Processing...';
+      _statusMessage = 'Memproses wajah Anda...';
       _statusColor = Colors.blue;
     });
 
     try {
-      print('[FACE_LOGIN] Stopping image stream...');
-      // Stop image stream
-      await _cameraController?.stopImageStream();
+      // Stop image stream if still running
+      if (_cameraController != null &&
+          _cameraController!.value.isStreamingImages) {
+        await _cameraController!.stopImageStream();
+      }
 
-      print('[FACE_LOGIN] Capturing image...');
-      // Capture image
-      final XFile imageFile = await _cameraController!.takePicture();
-      final File file = File(imageFile.path);
-      print('[FACE_LOGIN] Image captured: ${file.path}');
+      // Validate captured images
+      if (_capturedImages.isEmpty) {
+        print('[FACE_LOGIN] ERROR: No images captured');
+        _showError('Tidak ada foto yang berhasil diambil. Silakan coba lagi.');
+        return;
+      }
+
+      // Use the last captured image (from head turn) for recognition
+      final file = _capturedImages.last;
+      print('[FACE_LOGIN] Using image: ${file.path}');
 
       print('[FACE_LOGIN] Detecting faces...');
       // Detect face
@@ -172,48 +364,37 @@ class _FaceLoginScreenState extends State<FaceLoginScreen> {
 
       if (faces.isEmpty) {
         print('[FACE_LOGIN] ERROR: No face detected');
-        _showError('Wajah tidak terdeteksi\n\n'
-            '• Pastikan wajah Anda terlihat jelas\n'
-            '• Hindari cahaya dari belakang\n'
-            '• Lepas masker/kacamata hitam\n'
-            '• Coba posisi lebih dekat');
-        await Future.delayed(const Duration(seconds: 3));
-        _restartDetection();
+        _showError('Wajah tidak terdeteksi. Silakan coba lagi.');
         return;
       }
 
       if (faces.length > 1) {
-        print('[FACE_LOGIN] ERROR: Multiple faces detected (${faces.length})');
-        _showError('Terdeteksi ${faces.length} wajah\n\n'
-            '• Hanya 1 orang yang diperbolehkan\n'
-            '• Pastikan tidak ada orang lain di frame\n'
-            '• Coba lagi dengan posisi yang tepat');
-        await Future.delayed(const Duration(seconds: 3));
-        _restartDetection();
+        print('[FACE_LOGIN] ERROR: Multiple faces detected');
+        _showError('Terdeteksi lebih dari 1 wajah. Silakan coba lagi.');
         return;
       }
 
       final face = faces.first;
-      print('[FACE_LOGIN] Face bounding box: ${face.boundingBox}');
+      print('[FACE_LOGIN] Extracting embedding...');
 
-      print('[FACE_LOGIN] Extracting face region...');
       // Extract face region
       final faceImage =
           await _faceDetectionService.extractFaceImage(file, face);
 
       if (faceImage == null) {
         print('[FACE_LOGIN] ERROR: Failed to extract face');
-        _showError('Failed to extract face');
-        _restartDetection();
+        _showError('Gagal mengekstrak wajah. Silakan coba lagi.');
         return;
       }
 
       print(
-          '[FACE_LOGIN] Face extracted successfully: ${faceImage.width}x${faceImage.height}');
+          '[FACE_LOGIN] Face extracted: ${faceImage.width}x${faceImage.height}');
 
       // Generate embedding
+      if (!mounted) return;
+
       setState(() {
-        _statusMessage = 'Recognizing face...';
+        _statusMessage = 'Mengenali wajah Anda...';
       });
 
       print('[FACE_LOGIN] Generating embedding...');
@@ -226,8 +407,7 @@ class _FaceLoginScreenState extends State<FaceLoginScreen> {
             '[FACE_LOGIN] Embedding generated: ${embedding.length} dimensions');
       } catch (e) {
         print('[FACE_LOGIN] ERROR: Failed to generate embedding: $e');
-        _showError('Failed to generate face embedding. Please try again.');
-        _restartDetection();
+        _showError('Gagal generate embedding. Silakan coba lagi.');
         return;
       }
 
@@ -307,7 +487,11 @@ class _FaceLoginScreenState extends State<FaceLoginScreen> {
     setState(() {
       _isProcessing = false;
       _hasError = false;
-      _statusMessage = 'Position your face in the frame';
+      _currentLivenessStep = LivenessStep.initial;
+      _eyesWereOpen = false;
+      _capturedImages.clear();
+      _currentStep = 0;
+      _statusMessage = 'Posisikan wajah Anda di dalam frame';
       _statusColor = AppColors.primary;
     });
     _startFaceDetection();
@@ -439,6 +623,31 @@ class _FaceLoginScreenState extends State<FaceLoginScreen> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
+                          // Progress dots
+                          if (_currentLivenessStep != LivenessStep.initial &&
+                              _currentLivenessStep != LivenessStep.completed &&
+                              !_hasError)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: List.generate(
+                                  _totalSteps,
+                                  (index) => Container(
+                                    margin: const EdgeInsets.symmetric(
+                                        horizontal: 4),
+                                    width: 10,
+                                    height: 10,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: index < _currentStep
+                                          ? Colors.green
+                                          : Colors.white.withOpacity(0.5),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
                           Row(
                             children: [
                               if (_hasError)
@@ -502,40 +711,31 @@ class _FaceLoginScreenState extends State<FaceLoginScreen> {
                   ),
                 ),
 
-              // Manual capture button
-              if (!_isProcessing && _isInitialized)
+              // Info text at bottom (liveness auto-capture)
+              if (!_isProcessing &&
+                  _isInitialized &&
+                  !_hasError &&
+                  _currentLivenessStep != LivenessStep.completed)
                 Positioned(
                   bottom: 40,
-                  left: 0,
-                  right: 0,
-                  child: Center(
-                    child: GestureDetector(
-                      onTap: _captureAndRecognize,
-                      child: Container(
-                        width: 80,
-                        height: 80,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Colors.white,
-                          border: Border.all(
-                            color: _detectedFaces.isNotEmpty
-                                ? Colors.green
-                                : Colors.white,
-                            width: 4,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.3),
-                              blurRadius: 10,
-                            ),
-                          ],
-                        ),
-                        child: Icon(
-                          Icons.camera_alt,
-                          color: AppColors.primary,
-                          size: 36,
-                        ),
+                  left: 20,
+                  right: 20,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.6),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Text(
+                      'Ikuti instruksi untuk verifikasi liveness',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
                       ),
+                      textAlign: TextAlign.center,
                     ),
                   ),
                 ),
@@ -570,7 +770,6 @@ class FaceFramePainter extends CustomPainter {
 
     // Create smooth face outline similar to face mesh border
     final centerX = size.width / 2;
-    final centerY = size.height / 2;
 
     // Start from top center of head - perfectly rounded dome
     path.moveTo(centerX, size.height * 0.06);
