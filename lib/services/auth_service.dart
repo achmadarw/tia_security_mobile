@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
 import '../models/user.dart';
+import '../utils/error_handler.dart';
 
 class AuthService {
   String? _accessToken;
@@ -46,11 +47,22 @@ class AuthService {
 
         return {'success': true, 'user': _currentUser};
       } else {
-        final error = jsonDecode(response.body);
-        return {'success': false, 'error': error['error'] ?? 'Login failed'};
+        try {
+          final error = jsonDecode(response.body);
+          return {'success': false, 'error': error['error'] ?? 'Login gagal'};
+        } catch (e) {
+          return {
+            'success': false,
+            'error': ErrorHandler.handleHttpError(response)
+          };
+        }
       }
     } catch (e) {
-      return {'success': false, 'error': 'Connection error: $e'};
+      ErrorHandler.logError('AUTH_LOGIN', e);
+      return {
+        'success': false,
+        'error': ErrorHandler.getUserFriendlyMessage(e)
+      };
     }
   }
 
@@ -86,14 +98,50 @@ class AuthService {
           'attendance': data['attendance'], // Include attendance data
         };
       } else {
-        final error = jsonDecode(response.body);
-        return {
-          'success': false,
-          'error': error['error'] ?? 'Face not recognized'
-        };
+        try {
+          final error = jsonDecode(response.body);
+          final errorMsg = error['error'] ?? 'Wajah tidak dikenali';
+          return {
+            'success': false,
+            'error': ErrorHandler.getFaceRecognitionError(errorMsg)
+          };
+        } catch (e) {
+          return {
+            'success': false,
+            'error': ErrorHandler.handleHttpError(response)
+          };
+        }
       }
     } catch (e) {
-      return {'success': false, 'error': 'Connection error: $e'};
+      ErrorHandler.logError('FACE_LOGIN', e);
+      return {
+        'success': false,
+        'error': ErrorHandler.getUserFriendlyMessage(e)
+      };
+    }
+  }
+
+  // Validate token dengan server
+  Future<bool> validateToken() async {
+    if (_accessToken == null) return false;
+
+    try {
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.authMe}'),
+        headers: {
+          'Authorization': 'Bearer $_accessToken',
+        },
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        _currentUser = User.fromJson(jsonDecode(response.body));
+        return true;
+      } else {
+        return false;
+      }
+    } catch (e) {
+      print('Token validation error: $e');
+      return false;
     }
   }
 

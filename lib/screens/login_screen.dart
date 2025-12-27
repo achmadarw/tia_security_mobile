@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:ui';
 import '../services/auth_service.dart';
 import '../config/theme.dart';
+import '../widgets/error_widgets.dart';
 import 'home_screen.dart';
 import 'face_login_screen.dart';
 import 'register_screen.dart';
@@ -74,23 +75,10 @@ class _LoginScreenState extends State<LoginScreen>
         ),
       );
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              const Icon(Icons.error_outline, color: Colors.white),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(result['error'] ?? 'Login gagal'),
-              ),
-            ],
-          ),
-          backgroundColor: AppColors.error,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-        ),
+      ErrorSnackBar.show(
+        context,
+        result['error'] ?? 'Login gagal',
+        onRetry: _login,
       );
     }
   }
@@ -98,7 +86,9 @@ class _LoginScreenState extends State<LoginScreen>
   void _navigateToFaceLogin() {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (context) => const FaceLoginScreen(),
+        builder: (context) => FaceLoginScreen(
+          authService: widget.authService,
+        ),
       ),
     );
   }

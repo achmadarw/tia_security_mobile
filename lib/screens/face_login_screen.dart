@@ -11,7 +11,10 @@ import '../config/theme.dart';
 import 'home_screen.dart';
 
 class FaceLoginScreen extends StatefulWidget {
-  const FaceLoginScreen({Key? key}) : super(key: key);
+  final AuthService authService;
+
+  const FaceLoginScreen({Key? key, required this.authService})
+      : super(key: key);
 
   @override
   State<FaceLoginScreen> createState() => _FaceLoginScreenState();
@@ -248,7 +251,7 @@ class _FaceLoginScreenState extends State<FaceLoginScreen> {
       }
 
       // Send to backend for recognition
-      final result = await _faceRecognitionService.loginWithFace(
+      final result = await widget.authService.loginWithFace(
         embedding,
         latitude: position?.latitude,
         longitude: position?.longitude,
@@ -278,14 +281,14 @@ class _FaceLoginScreenState extends State<FaceLoginScreen> {
           Navigator.of(context).pushReplacement(
             MaterialPageRoute(
               builder: (_) => HomeScreen(
-                authService: AuthService(),
+                authService: widget.authService,
               ),
             ),
           );
         }
       } else {
-        print('[FACE_LOGIN] FAILED: ${result['message']}');
-        _showError(result['message'] ?? 'Face not recognized');
+        print('[FACE_LOGIN] FAILED: ${result['error']}');
+        _showError(result['error'] ?? 'Face not recognized');
         _restartDetection();
       }
     } catch (e) {
@@ -307,6 +310,7 @@ class _FaceLoginScreenState extends State<FaceLoginScreen> {
 
   void _showError(String message) {
     setState(() {
+      _isProcessing = false; // Remove overlay so error is visible
       _statusMessage = message;
       _statusColor = Colors.red;
     });

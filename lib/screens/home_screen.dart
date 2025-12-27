@@ -9,6 +9,7 @@ import '../config/theme_provider.dart';
 import 'login_screen.dart';
 import 'users_screen.dart';
 import 'face_login_screen.dart';
+import 'profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final AuthService authService;
@@ -924,7 +925,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         onPressed: () {
           Navigator.push(
             context,
-            MaterialPageRoute(builder: (context) => const FaceLoginScreen()),
+            MaterialPageRoute(
+              builder: (context) => FaceLoginScreen(
+                authService: widget.authService,
+              ),
+            ),
           );
         },
         child: Icon(
@@ -1079,8 +1084,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ),
               onTap: () {
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Profile - Coming Soon')),
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ProfileScreen(
+                      authService: widget.authService,
+                    ),
+                  ),
                 );
               },
             ),

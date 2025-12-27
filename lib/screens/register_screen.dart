@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:ui';
 import '../services/auth_service.dart';
 import '../config/theme.dart';
+import '../widgets/error_widgets.dart';
 
 class RegisterScreen extends StatefulWidget {
   final AuthService authService;
@@ -37,8 +38,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     if (_passwordController.text != _confirmPasswordController.text) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Password tidak cocok')),
+      ErrorSnackBar.show(
+        context,
+        'Password tidak cocok. Silakan periksa kembali.',
       );
       return;
     }

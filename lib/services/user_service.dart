@@ -267,6 +267,33 @@ class UserService {
     }
   }
 
+  /// Get user's face images
+  Future<List<Map<String, dynamic>>> getFaceImages(int userId) async {
+    try {
+      final headers = await _getHeaders();
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.users}/$userId/face-images'),
+        headers: headers,
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final images = data['data']['images'] as List<dynamic>? ?? [];
+        return images
+            .map((img) => {
+                  'url': img['url'] as String,
+                  'createdAt': img['createdAt'] as String,
+                })
+            .toList();
+      } else {
+        return [];
+      }
+    } catch (e) {
+      print('[UserService] Error fetching face images: $e');
+      return [];
+    }
+  }
+
   /// Get user's face images count
   Future<int> getFaceImagesCount(int userId) async {
     try {

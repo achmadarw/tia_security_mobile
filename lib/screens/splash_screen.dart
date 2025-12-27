@@ -25,12 +25,30 @@ class _SplashScreenState extends State<SplashScreen> {
 
     if (!mounted) return;
 
+    // Validate token dengan server sebelum auto-login
     if (widget.authService.isAuthenticated) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (context) => HomeScreen(authService: widget.authService),
-        ),
-      );
+      final isValid = await widget.authService.validateToken();
+
+      if (!mounted) return;
+
+      if (isValid) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (context) => HomeScreen(authService: widget.authService),
+          ),
+        );
+      } else {
+        // Token invalid/expired, logout dan ke login screen
+        await widget.authService.logout();
+
+        if (!mounted) return;
+
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (context) => LoginScreen(authService: widget.authService),
+          ),
+        );
+      }
     } else {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
