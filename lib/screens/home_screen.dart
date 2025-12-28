@@ -10,6 +10,8 @@ import 'login_screen.dart';
 import 'users_screen.dart';
 import 'quick_attendance_screen.dart';
 import 'profile_screen.dart';
+import 'admin/shift_management_screen.dart';
+import 'admin/roster_management_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final AuthService authService;
@@ -38,6 +40,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Map<String, dynamic>? _currentShift;
   List<dynamic> _completedShifts = [];
   bool _isCardExpanded = false; // For expandable card
+  List<dynamic> _todayAssignments = []; // Shift assignments for today
+  bool _hasAssignments = false;
 
   @override
   void initState() {
@@ -75,6 +79,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
       if (data != null && mounted) {
         setState(() {
+          // Shift assignments
+          _todayAssignments = data['assignments'] ?? [];
+          _hasAssignments = data['hasAssignments'] ?? false;
+
           // Multiple shifts support
           _shifts = data['shifts'] ?? [];
           _shiftCount = data['shiftCount'] ?? 0;
@@ -542,6 +550,213 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               const SizedBox(height: 20),
               const Divider(color: Colors.white24, height: 1),
               const SizedBox(height: 20),
+
+              // Shift assignment info (if any)
+              if (_hasAssignments && _todayAssignments.isNotEmpty)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? Colors.blue.shade900.withOpacity(0.3)
+                        : Colors.white.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isDark
+                          ? Colors.blue.shade700.withOpacity(0.5)
+                          : Colors.white.withOpacity(0.3),
+                      width: 1,
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.calendar_today,
+                            color: isDark ? Colors.blue.shade300 : Colors.white,
+                            size: 16,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Shift Terjadwal',
+                            style: TextStyle(
+                              color: isDark
+                                  ? AppColors.darkTextPrimary
+                                  : Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      ..._todayAssignments.map((assignment) {
+                        final shift = assignment['shift'];
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  '${shift['name']} (${shift['start_time']} - ${shift['end_time']})',
+                                  style: TextStyle(
+                                    color: isDark
+                                        ? AppColors.darkTextSecondary
+                                        : Colors.white.withOpacity(0.95),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                    ],
+                  ),
+                ),
+
+              // Late/Early/Overtime badges
+              if (_shifts.isNotEmpty &&
+                  _shifts.any((s) =>
+                      s['isLate'] == true ||
+                      s['isEarlyLeave'] == true ||
+                      s['isOvertime'] == true))
+                Container(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      ..._shifts.map((shift) {
+                        List<Widget> badges = [];
+
+                        // Late badge
+                        if (shift['isLate'] == true) {
+                          badges.add(
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: isDark
+                                    ? Colors.red.shade900.withOpacity(0.4)
+                                    : Colors.red.shade700.withOpacity(0.9),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: isDark
+                                      ? Colors.red.shade700
+                                      : Colors.red.shade900,
+                                  width: 1,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.warning_amber_rounded,
+                                      color: Colors.white, size: 14),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'TELAT ${shift['lateMinutes']}m',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }
+
+                        // Early leave badge
+                        if (shift['isEarlyLeave'] == true) {
+                          badges.add(
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: isDark
+                                    ? Colors.orange.shade900.withOpacity(0.4)
+                                    : Colors.orange.shade700.withOpacity(0.9),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: isDark
+                                      ? Colors.orange.shade700
+                                      : Colors.orange.shade900,
+                                  width: 1,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.exit_to_app,
+                                      color: Colors.white, size: 14),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'PULANG CEPAT',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }
+
+                        // Overtime badge
+                        if (shift['isOvertime'] == true) {
+                          badges.add(
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: isDark
+                                    ? Colors.green.shade900.withOpacity(0.4)
+                                    : Colors.green.shade700.withOpacity(0.9),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: isDark
+                                      ? Colors.green.shade700
+                                      : Colors.green.shade900,
+                                  width: 1,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.trending_up,
+                                      color: Colors.white, size: 14),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'LEMBUR ${shift['overtimeMinutes']}m',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }
+
+                        return Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: badges,
+                        );
+                      }).expand((badges) sync* {
+                        yield* [badges];
+                      }).toList(),
+                    ],
+                  ),
+                ),
 
               // Current shift duration or last shift info
               if (_isCheckedIn)
@@ -1069,6 +1284,28 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             MaterialPageRoute(
               builder: (context) =>
                   UsersScreen(authService: widget.authService),
+            ),
+          );
+        }),
+      if (isAdmin)
+        _ActionData('Shifts', Icons.schedule, Colors.orange, () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ShiftManagementScreen(
+                authService: widget.authService,
+              ),
+            ),
+          );
+        }),
+      if (isAdmin)
+        _ActionData('Roster', Icons.calendar_month, Colors.deepPurple, () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => RosterManagementScreen(
+                authService: widget.authService,
+              ),
             ),
           );
         }),

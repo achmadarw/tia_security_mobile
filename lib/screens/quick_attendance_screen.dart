@@ -54,10 +54,39 @@ class _QuickAttendanceScreenState extends State<QuickAttendanceScreen> {
   int _currentStep = 0;
   final int _totalSteps = 2;
 
+  // Shift assignment
+  Map<String, dynamic>? _todayAssignment;
+  bool _isLoadingAssignment = true;
+
   @override
   void initState() {
     super.initState();
+    _fetchTodayAssignment();
     _requestPermissions();
+  }
+
+  Future<void> _fetchTodayAssignment() async {
+    try {
+      final response = await widget.authService.getTodayAttendance();
+      if (response != null && response['success'] == true) {
+        final data = response['data'] as Map<String, dynamic>?;
+        final assignments = data?['assignments'] as List?;
+        setState(() {
+          _todayAssignment =
+              assignments?.isNotEmpty == true ? assignments!.first : null;
+          _isLoadingAssignment = false;
+        });
+      } else {
+        setState(() {
+          _isLoadingAssignment = false;
+        });
+      }
+    } catch (e) {
+      print('[QUICK_ATTENDANCE] Error fetching shift assignment: $e');
+      setState(() {
+        _isLoadingAssignment = false;
+      });
+    }
   }
 
   Future<void> _requestPermissions() async {
@@ -609,93 +638,156 @@ class _QuickAttendanceScreenState extends State<QuickAttendanceScreen> {
                 top: 80,
                 left: 20,
                 right: 20,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                    child: Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: _statusColor.withOpacity(0.9),
+                child: Column(
+                  children: [
+                    // Shift assignment card
+                    if (!_isLoadingAssignment && _todayAssignment != null)
+                      ClipRRect(
                         borderRadius: BorderRadius.circular(12),
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                          child: Container(
+                            padding: const EdgeInsets.all(12),
+                            margin: const EdgeInsets.only(bottom: 12),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.shade700.withOpacity(0.85),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: Colors.blue.shade300.withOpacity(0.5),
+                                width: 1,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.calendar_today,
+                                  color: Colors.white,
+                                  size: 18,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Shift Terjadwal',
+                                        style: TextStyle(
+                                          color: Colors.white.withOpacity(0.9),
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        '${(_todayAssignment?['shift'] as Map?)?['name'] ?? ''} (${(_todayAssignment?['shift'] as Map?)?['start_time'] ?? ''} - ${(_todayAssignment?['shift'] as Map?)?['end_time'] ?? ''})',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // Progress dots
-                          if (_currentLivenessStep != LivenessStep.initial &&
-                              _currentLivenessStep != LivenessStep.completed &&
-                              !_hasError)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 12),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: List.generate(
-                                  _totalSteps,
-                                  (index) => Container(
-                                    margin: const EdgeInsets.symmetric(
-                                        horizontal: 4),
-                                    width: 10,
-                                    height: 10,
-                                    decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      color: index < _currentStep
-                                          ? Colors.green
-                                          : Colors.white.withOpacity(0.5),
+
+                    // Status message
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: _statusColor.withOpacity(0.9),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              // Progress dots
+                              if (_currentLivenessStep !=
+                                      LivenessStep.initial &&
+                                  _currentLivenessStep !=
+                                      LivenessStep.completed &&
+                                  !_hasError)
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 12),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: List.generate(
+                                      _totalSteps,
+                                      (index) => Container(
+                                        margin: const EdgeInsets.symmetric(
+                                            horizontal: 4),
+                                        width: 10,
+                                        height: 10,
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: index < _currentStep
+                                              ? Colors.green
+                                              : Colors.white.withOpacity(0.5),
+                                        ),
+                                      ),
                                     ),
                                   ),
                                 ),
+                              Row(
+                                children: [
+                                  if (_hasError)
+                                    const Padding(
+                                      padding: EdgeInsets.only(right: 8),
+                                      child: Icon(
+                                        Icons.error_outline,
+                                        color: Colors.white,
+                                        size: 24,
+                                      ),
+                                    ),
+                                  Expanded(
+                                    child: Text(
+                                      _statusMessage,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ),
-                          Row(
-                            children: [
+                              // Retry button
                               if (_hasError)
-                                const Padding(
-                                  padding: EdgeInsets.only(right: 8),
-                                  child: Icon(
-                                    Icons.error_outline,
-                                    color: Colors.white,
-                                    size: 24,
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 12),
+                                  child: ElevatedButton.icon(
+                                    onPressed: _restartDetection,
+                                    icon: const Icon(Icons.refresh, size: 18),
+                                    label: const Text('Coba Lagi'),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.white,
+                                      foregroundColor: Colors.red.shade700,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(20),
+                                      ),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 20,
+                                        vertical: 8,
+                                      ),
+                                    ),
                                   ),
                                 ),
-                              Expanded(
-                                child: Text(
-                                  _statusMessage,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ),
                             ],
                           ),
-                          // Retry button
-                          if (_hasError)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 12),
-                              child: ElevatedButton.icon(
-                                onPressed: _restartDetection,
-                                icon: const Icon(Icons.refresh, size: 18),
-                                label: const Text('Coba Lagi'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.white,
-                                  foregroundColor: Colors.red.shade700,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(20),
-                                  ),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 20,
-                                    vertical: 8,
-                                  ),
-                                ),
-                              ),
-                            ),
-                        ],
+                        ),
                       ),
                     ),
-                  ),
+                  ],
                 ),
               ),
 

@@ -12,6 +12,7 @@ class AuthService {
 
   User? get currentUser => _currentUser;
   bool get isAuthenticated => _accessToken != null;
+  String? get accessToken => _accessToken;
 
   // Initialize - Load saved tokens
   Future<void> init() async {
