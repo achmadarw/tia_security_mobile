@@ -594,6 +594,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       const SizedBox(height: 8),
                       ..._todayAssignments.map((assignment) {
                         final shift = assignment['shift'];
+                        if (shift == null) return const SizedBox.shrink();
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 4),
                           child: Row(
