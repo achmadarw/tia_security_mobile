@@ -40,6 +40,9 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
   // Speed dial FAB state
   bool _isFabExpanded = false;
 
+  // Grid sort method: 'alpha-asc', 'alpha-desc', 'off-day'
+  String _gridSortMethod = 'alpha-asc';
+
   @override
   void initState() {
     super.initState();
@@ -1104,9 +1107,27 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
     final lastDay = DateTime(_selectedMonth.year, _selectedMonth.month + 1, 0);
     final daysInMonth = lastDay.day;
 
-    // Filter only security users (role = 'security') and sort alphabetically
-    final securityUsers = _users.where((u) => u.role == 'security').toList()
-      ..sort((a, b) => a.name.compareTo(b.name));
+    // Filter only security users (role = 'security')
+    var securityUsers = _users.where((u) => u.role == 'security').toList();
+
+    // Apply sorting based on selected method
+    if (_gridSortMethod == 'alpha-asc') {
+      // Alphabetically A-Z
+      securityUsers.sort((a, b) => a.name.compareTo(b.name));
+    } else if (_gridSortMethod == 'alpha-desc') {
+      // Alphabetically Z-A
+      securityUsers.sort((a, b) => b.name.compareTo(a.name));
+    } else if (_gridSortMethod == 'off-day') {
+      // Sort by OFF day (find first OFF day in current month)
+      securityUsers.sort((a, b) {
+        final aOffDay = _getFirstOffDay(a);
+        final bOffDay = _getFirstOffDay(b);
+        if (aOffDay == -1 && bOffDay == -1) return 0;
+        if (aOffDay == -1) return 1; // No OFF day goes last
+        if (bOffDay == -1) return -1;
+        return aOffDay.compareTo(bOffDay);
+      });
+    }
 
     if (securityUsers.isEmpty) {
       return Center(
@@ -1128,7 +1149,7 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
 
     return Column(
       children: [
-        // Legend/Info bar
+        // Legend/Info bar with sort selector
         Container(
           margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
           padding: const EdgeInsets.all(12),
@@ -1141,19 +1162,97 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
           ),
           child: Row(
             children: [
-              Icon(Icons.info_outline,
+              Icon(Icons.sort,
                   size: 18,
                   color:
                       isDark ? AppColors.darkTextSecondary : AppColors.primary),
               SizedBox(width: 8),
+              Text(
+                'Urutan:',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: isDark
+                      ? AppColors.darkTextPrimary
+                      : AppColors.lightTextPrimary,
+                ),
+              ),
+              SizedBox(width: 8),
               Expanded(
-                child: Text(
-                  'Tap pada cell untuk assign shift',
-                  style: TextStyle(
-                    fontSize: 13,
+                child: Container(
+                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  decoration: BoxDecoration(
                     color: isDark
-                        ? AppColors.darkTextSecondary
-                        : AppColors.lightTextSecondary,
+                        ? AppColors.darkSurfaceVariant
+                        : AppColors.lightSurfaceVariant,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color:
+                          isDark ? AppColors.borderDark : AppColors.borderLight,
+                    ),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: _gridSortMethod,
+                      isDense: true,
+                      isExpanded: true,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: isDark
+                            ? AppColors.darkTextPrimary
+                            : AppColors.lightTextPrimary,
+                      ),
+                      dropdownColor: isDark ? AppColors.darkCard : Colors.white,
+                      icon: Icon(
+                        Icons.arrow_drop_down,
+                        size: 20,
+                        color: isDark
+                            ? AppColors.darkTextSecondary
+                            : AppColors.lightTextSecondary,
+                      ),
+                      items: [
+                        DropdownMenuItem(
+                          value: 'alpha-asc',
+                          child: Row(
+                            children: [
+                              Icon(Icons.sort_by_alpha,
+                                  size: 16, color: Colors.blue),
+                              SizedBox(width: 6),
+                              Text('Alfabetis (A-Z)'),
+                            ],
+                          ),
+                        ),
+                        DropdownMenuItem(
+                          value: 'alpha-desc',
+                          child: Row(
+                            children: [
+                              Icon(Icons.sort_by_alpha,
+                                  size: 16, color: Colors.orange),
+                              SizedBox(width: 6),
+                              Text('Alfabetis (Z-A)'),
+                            ],
+                          ),
+                        ),
+                        DropdownMenuItem(
+                          value: 'off-day',
+                          child: Row(
+                            children: [
+                              Icon(Icons.event_busy,
+                                  size: 16, color: Colors.red),
+                              SizedBox(width: 6),
+                              Text('Berdasarkan OFF Day'),
+                            ],
+                          ),
+                        ),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() {
+                            _gridSortMethod = value;
+                          });
+                        }
+                      },
+                    ),
                   ),
                 ),
               ),
@@ -1425,14 +1524,10 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
                     ),
                   ),
                 )
-              : Text(
-                  '-',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: isDark
-                        ? AppColors.darkTextTertiary
-                        : Colors.grey.shade400,
-                  ),
+              : Icon(
+                  Icons.event_busy_rounded,
+                  size: 24,
+                  color: Colors.red.shade600,
                 ),
         ),
       ),
@@ -1693,6 +1788,29 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
         SnackBar(content: Text('Error: ${e.toString()}')),
       );
     }
+  }
+
+  // Helper: Find first OFF day (no assignment) for a user in current month
+  int _getFirstOffDay(User user) {
+    final lastDay = DateTime(_selectedMonth.year, _selectedMonth.month + 1, 0);
+    final daysInMonth = lastDay.day;
+
+    for (int day = 1; day <= daysInMonth; day++) {
+      final date = DateTime(_selectedMonth.year, _selectedMonth.month, day);
+      final year = date.year.toString();
+      final month = date.month.toString().padLeft(2, '0');
+      final dayStr = date.day.toString().padLeft(2, '0');
+      final dateKey = '$year-$month-$dayStr';
+
+      final dayAssignments = _assignments[dateKey] ?? [];
+      final hasAssignment = dayAssignments.any((a) => a.userId == user.id);
+
+      if (!hasAssignment) {
+        return day; // Found first OFF day
+      }
+    }
+
+    return -1; // No OFF day found
   }
 
   // Reset Roster Dialog - Clear all assignments for selected month
