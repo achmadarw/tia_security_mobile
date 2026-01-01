@@ -5,10 +5,12 @@ import '../../models/shift.dart';
 import '../../config/theme.dart';
 import '../../models/shift_assignment.dart';
 import '../../models/user.dart';
+import '../../models/roster_pattern.dart';
 import '../../services/shift_service.dart';
 import '../../services/shift_assignment_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/user_service.dart';
+import '../../services/roster_pattern_service.dart';
 
 class RosterManagementScreen extends StatefulWidget {
   final AuthService authService;
@@ -26,6 +28,7 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
   final ShiftService _shiftService = ShiftService();
   final ShiftAssignmentService _assignmentService = ShiftAssignmentService();
   final UserService _userService = UserService();
+  final RosterPatternService _patternService = RosterPatternService();
 
   DateTime _selectedMonth = DateTime.now();
   List<Shift> _shifts = [];
@@ -2045,42 +2048,49 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
 
     // State variables
     List<User> selectedUsers = [];
+    bool isLoadingPatterns = false;
+    List<RosterPattern> availablePatterns = [];
+    RosterPattern? selectedPattern;
+    String? patternLoadError;
 
-    // Proven Pattern Library from Reference Rosters
-    // Pattern is assigned by ROW INDEX, not rotation
-    final patternLibrary = {
-      4: {
-        'name': '4 Personil (Juni 2025 Reference)',
-        'description': 'Pattern dari roster Juni 2025',
-        'patterns': [
-          [1, 3, 2, 3, 2, 2, 0], // Row 1: OFF day 7, 14, 21, 28
-          [0, 1, 3, 2, 3, 3, 2], // Row 2: OFF day 1, 8, 15, 22, 29
-          [2, 0, 1, 3, 3, 3, 3], // Row 3: OFF day 2, 9, 16, 23, 30
-          [3, 2, 0, 1, 1, 1, 1], // Row 4: OFF day 3, 10, 17, 24
-        ],
-      },
-      5: {
-        'name': '5 Personil (Okt-Des 2025 Reference)',
-        'description': 'Pattern dari roster Oktober-Desember 2025',
-        'patterns': [
-          [1, 3, 3, 3, 2, 2, 0], // Row 1: OFF day 7, 14, 21, 28
-          [3, 3, 2, 2, 1, 0, 1], // Row 2: OFF day 6, 13, 20, 27
-          [3, 2, 3, 2, 0, 1, 3], // Row 3: OFF day 5, 12, 19, 26
-          [2, 0, 1, 1, 3, 3, 3], // Row 4: OFF day 2, 9, 16, 23, 30
-          [0, 1, 2, 3, 3, 3, 2], // Row 5: OFF day 1, 8, 15, 22, 29
-        ],
-      },
-    };
+    // Load available patterns from API
+    Future<void> loadPatterns(int personilCount) async {
+      try {
+        print('🔄 Loading patterns from API for $personilCount personil...');
+        final token = widget.authService.accessToken;
+        final patterns = await _patternService.getPatterns(
+          token: token,
+          personilCount: personilCount,
+        );
+        print('✅ Received ${patterns.length} patterns from API');
+        availablePatterns = patterns;
+
+        // Auto-select default pattern if available
+        try {
+          selectedPattern = patterns.firstWhere((p) => p.isDefault);
+          print('✅ Auto-selected default pattern: ${selectedPattern?.name}');
+        } catch (e) {
+          selectedPattern = patterns.isNotEmpty ? patterns.first : null;
+          print(
+              '⚠️ No default pattern, selected first: ${selectedPattern?.name}');
+        }
+        patternLoadError = null;
+      } catch (e) {
+        print('❌ Error loading patterns: $e');
+        patternLoadError = 'Gagal memuat pattern: $e';
+        availablePatterns = [];
+        selectedPattern = null;
+      } finally {
+        isLoadingPatterns = false;
+      }
+    }
 
     await showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) {
-          // Determine pattern library based on selected users count
+          // Determine pattern based on selected users count
           final userCount = selectedUsers.length;
-          final hasValidPattern = patternLibrary.containsKey(userCount);
-          final patternInfo =
-              hasValidPattern ? patternLibrary[userCount]! : null;
 
           return AlertDialog(
             backgroundColor: isDark ? AppColors.darkCard : Colors.white,
@@ -2186,10 +2196,22 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
                             value: isSelected,
                             onChanged: (value) {
                               setDialogState(() {
+                                final previousCount = selectedUsers.length;
                                 if (value == true) {
                                   selectedUsers.add(user);
                                 } else {
                                   selectedUsers.remove(user);
+                                }
+                                // Load patterns when count changes
+                                final newCount = selectedUsers.length;
+                                if (newCount > 0 && newCount != previousCount) {
+                                  isLoadingPatterns = true;
+                                  loadPatterns(newCount).then((_) {
+                                    setDialogState(() {});
+                                  });
+                                } else if (newCount == 0) {
+                                  availablePatterns = [];
+                                  selectedPattern = null;
                                 }
                               });
                             },
@@ -2244,84 +2266,6 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
                         },
                       ),
                     ),
-                    if (selectedUsers.isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      // Pattern info display
-                      if (hasValidPattern && patternInfo != null)
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.green.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: Colors.green.withOpacity(0.3),
-                            ),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  const Icon(
-                                    Icons.check_circle,
-                                    color: Colors.green,
-                                    size: 16,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    patternInfo['name'] as String,
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.green,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                '${selectedUsers.length} personil dipilih • ${patternInfo['description']}',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: isDark
-                                      ? AppColors.darkTextSecondary
-                                      : AppColors.lightTextSecondary,
-                                ),
-                              ),
-                            ],
-                          ),
-                        )
-                      else
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.orange.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: Colors.orange.withOpacity(0.3),
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.warning_amber,
-                                color: Colors.orange,
-                                size: 16,
-                              ),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: Text(
-                                  'Pattern hanya tersedia untuk ${patternLibrary.keys.join(", ")} personil. Pilih ${userCount} tidak didukung.',
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    color: Colors.orange,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                    ],
                   ],
                 ),
               ),
@@ -2340,14 +2284,25 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
               ),
               ElevatedButton.icon(
                 onPressed: selectedUsers.isEmpty ||
-                        !hasValidPattern ||
-                        patternInfo == null
+                        selectedPattern == null ||
+                        isLoadingPatterns
                     ? null
                     : () async {
                         Navigator.pop(context);
+
+                        // Record pattern usage
+                        try {
+                          final token = widget.authService.accessToken;
+                          await _patternService.recordUsage(selectedPattern!.id,
+                              token: token);
+                        } catch (e) {
+                          print('Warning: Failed to record usage: $e');
+                        }
+
+                        // Generate roster
                         await _generateRoster(
                           selectedUsers,
-                          patternInfo['patterns'] as List<List<int>>,
+                          selectedPattern!.patternData,
                         );
                       },
                 icon: const Icon(Icons.auto_awesome, size: 18),
