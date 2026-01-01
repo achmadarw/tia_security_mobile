@@ -11,6 +11,7 @@ import '../../services/shift_assignment_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/user_service.dart';
 import '../../services/roster_pattern_service.dart';
+import '../../services/roster_assignment_service.dart';
 
 class RosterManagementScreen extends StatefulWidget {
   final AuthService authService;
@@ -24,16 +25,38 @@ class RosterManagementScreen extends StatefulWidget {
   State<RosterManagementScreen> createState() => _RosterManagementScreenState();
 }
 
+// Helper class untuk user dengan pattern data
+class UserWithPattern {
+  final User user;
+  final RosterPattern? pattern;
+  final List<int> calculatedShifts; // Shift IDs untuk setiap hari dalam bulan
+  final int firstOffDay; // Hari pertama OFF (1-31, 999 jika tidak ada)
+  final int offDayOfWeek; // Day of week untuk first OFF (1=Mon, 7=Sun)
+
+  UserWithPattern({
+    required this.user,
+    this.pattern,
+    required this.calculatedShifts,
+    required this.firstOffDay,
+    required this.offDayOfWeek,
+  });
+}
+
 class _RosterManagementScreenState extends State<RosterManagementScreen> {
   final ShiftService _shiftService = ShiftService();
   final ShiftAssignmentService _assignmentService = ShiftAssignmentService();
   final UserService _userService = UserService();
   final RosterPatternService _patternService = RosterPatternService();
+  final RosterAssignmentService _rosterAssignmentService =
+      RosterAssignmentService();
 
   DateTime _selectedMonth = DateTime.now();
   List<Shift> _shifts = [];
   List<User> _users = [];
   Map<String, List<ShiftAssignment>> _assignments = {}; // key: "YYYY-MM-DD"
+  Map<int, RosterPattern?> _userPatterns = {}; // key: userId, value: pattern
+  List<UserWithPattern> _rosterData =
+      []; // Calculated roster data dengan pattern
   bool _isLoading = true;
   String? _error;
 
@@ -43,8 +66,8 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
   // Speed dial FAB state
   bool _isFabExpanded = false;
 
-  // Grid sort method: 'alpha-asc', 'alpha-desc', 'off-day'
-  String _gridSortMethod = 'alpha-asc';
+  // Grid sort method: 'first' (by OFF day number) or 'last' (by day of week)
+  String _gridSortMethod = 'first';
 
   @override
   void initState() {
@@ -68,16 +91,28 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
       // Load users
       final users = await _userService.getUsers();
 
-      // Load assignments for current month
-      final firstDay = DateTime(_selectedMonth.year, _selectedMonth.month, 1);
-      final lastDay =
-          DateTime(_selectedMonth.year, _selectedMonth.month + 1, 0);
+      // Load assignments for current month using portal endpoint
+      // Format: "YYYY-MM-DD" (any day in the month, will match whole month)
+      final monthStr =
+          '${_selectedMonth.year}-${_selectedMonth.month.toString().padLeft(2, '0')}-01';
 
-      final assignments = await _assignmentService.getCalendar(
+      print('📅 Fetching assignments for month: $monthStr');
+      final assignments = await _assignmentService.getMonthAssignments(
         token,
-        startDate: firstDay,
-        endDate: lastDay,
+        monthStr,
       );
+
+      print('📦 Total assignments fetched: ${assignments.length}');
+
+      // DEBUG: Log all Ilham (user_id=8) assignments BEFORE grouping
+      final ilhamAssignments = assignments.where((a) => a.userId == 8).toList();
+      print(
+          '🔍 DEBUG Ilham: Found ${ilhamAssignments.length} assignments for user_id=8');
+      for (var i = 0; i < ilhamAssignments.length && i < 5; i++) {
+        final assign = ilhamAssignments[i];
+        print(
+            '  Ilham[$i]: ID=${assign.id}, Date=${assign.assignmentDate}, Shift=${assign.shiftId}');
+      }
 
       // Group assignments by date
       final Map<String, List<ShiftAssignment>> assignmentsByDate = {};
@@ -93,10 +128,106 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
         assignmentsByDate[key]!.add(assignment);
       }
 
+      print('📅 Assignments grouped by ${assignmentsByDate.length} dates');
+
+      // DEBUG: Check if Ilham has assignment on Dec 1
+      final dec1Key = '2025-12-01';
+      if (assignmentsByDate.containsKey(dec1Key)) {
+        final dec1Assignments = assignmentsByDate[dec1Key]!;
+        final ilhamDec1 = dec1Assignments.where((a) => a.userId == 8).toList();
+        print(
+            '🚨 CRITICAL DEBUG: $dec1Key has ${dec1Assignments.length} total assignments');
+        if (ilhamDec1.isNotEmpty) {
+          print('   ⚠️ Ilham (user_id=8) HAS assignment on Dec 1:');
+          for (var a in ilhamDec1) {
+            print('      ID=${a.id}, Shift=${a.shiftId}');
+          }
+        } else {
+          print('   ✓ Ilham (user_id=8) has NO assignment on Dec 1 (correct)');
+        }
+      }
+
+      // Show first 5 dates for debugging
+      int count = 0;
+      assignmentsByDate.forEach((date, assigns) {
+        if (count < 5) {
+          print('  $date: ${assigns.length} assignments');
+          for (var a in assigns.take(3)) {
+            print('    - User ${a.userId}: Shift ${a.shiftId}');
+          }
+          count++;
+        }
+      });
+
+      // Fetch roster assignments (user-pattern mapping for the month)
+      final Map<int, RosterPattern?> userPatterns = {};
+      try {
+        print(
+            '🔍 Requesting roster assignments for: ${_selectedMonth.year}/${_selectedMonth.month}');
+
+        final rosterAssignments =
+            await _rosterAssignmentService.getMonthAssignments(
+          token,
+          _selectedMonth.year,
+          _selectedMonth.month,
+        );
+
+        print('📥 Received ${rosterAssignments.length} roster assignments');
+
+        // Build userPatterns map from roster assignments
+        // Pattern data is already included in the response!
+        for (var rosterAssignment in rosterAssignments) {
+          // Convert roster assignment pattern data to RosterPattern object
+          // Backend sends 1D array [1,2,3,1,2,0,0], wrap it in 2D for RosterPattern
+          final pattern = RosterPattern(
+            id: rosterAssignment.patternId,
+            name: rosterAssignment.patternName,
+            description: null,
+            personilCount: 1, // Not used in calculation
+            patternData: [rosterAssignment.patternData], // Wrap 1D array in 2D
+            isDefault: false,
+            createdBy: null,
+            createdAt: rosterAssignment.assignedAt,
+            updatedAt: rosterAssignment.assignedAt,
+            usageCount: 0,
+            lastUsedAt: rosterAssignment.assignedAt,
+          );
+
+          userPatterns[rosterAssignment.userId] = pattern;
+
+          print(
+              '👤 User ${rosterAssignment.userName} (ID: ${rosterAssignment.userId}):');
+          print('   Pattern: ${rosterAssignment.patternName}');
+          print('   Data: ${rosterAssignment.patternData}');
+        }
+
+        print(
+            '✅ Loaded ${rosterAssignments.length} roster assignments with patterns');
+      } catch (e) {
+        print('⚠️ Error loading roster assignments: $e');
+        // Continue without roster assignments - will show only actual shifts
+      }
+
+      // Fill remaining users with null patterns
+      for (var user in users) {
+        userPatterns.putIfAbsent(user.id, () => null);
+      }
+
+      // Calculate roster data with pattern fallback
+      final rosterData = _calculateRosterData(
+        users: users,
+        shifts: shifts,
+        assignments: assignmentsByDate,
+        userPatterns: userPatterns,
+        selectedMonth: _selectedMonth,
+      );
+
       setState(() {
         _shifts = shifts;
         _users = users;
         _assignments = assignmentsByDate;
+        _userPatterns = userPatterns;
+        _rosterData = rosterData;
         _isLoading = false;
       });
     } catch (e) {
@@ -105,6 +236,99 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
         _isLoading = false;
       });
     }
+  }
+
+  /// Calculate roster data with pattern fallback (sama seperti portal)
+  List<UserWithPattern> _calculateRosterData({
+    required List<User> users,
+    required List<Shift> shifts,
+    required Map<String, List<ShiftAssignment>> assignments,
+    required Map<int, RosterPattern?> userPatterns,
+    required DateTime selectedMonth,
+  }) {
+    final daysInMonth =
+        DateTime(selectedMonth.year, selectedMonth.month + 1, 0).day;
+
+    return users.map((user) {
+      final pattern = userPatterns[user.id];
+      print('\n🧑 Calculating roster for: ${user.name} (ID: ${user.id})');
+      if (pattern != null) {
+        print('  Pattern: ${pattern.name}');
+        print('  Pattern Data: ${pattern.patternData[0]}');
+      } else {
+        print('  ⚠️ No pattern assigned');
+      }
+
+      // Calculate shifts for each day in month
+      final calculatedShifts = List<int>.generate(daysInMonth, (dayIndex) {
+        final day = dayIndex + 1;
+        final date = DateTime(selectedMonth.year, selectedMonth.month, day);
+        final year = date.year.toString();
+        final month = date.month.toString().padLeft(2, '0');
+        final dayStr = date.day.toString().padLeft(2, '0');
+        final dateKey = '$year-$month-$dayStr';
+
+        // Priority 1: Check actual assignment (from database)
+        final dayAssignments = assignments[dateKey] ?? [];
+        final actualAssignment = dayAssignments.firstWhere(
+          (a) => a.userId == user.id,
+          orElse: () => ShiftAssignment(
+            id: -1,
+            userId: user.id,
+            shiftId: -1,
+            assignmentDate: date,
+            isReplacement: false,
+          ),
+        );
+
+        if (actualAssignment.id != -1 && actualAssignment.shiftId != -1) {
+          print(
+              '  ✅ Day $day: Actual assignment found - Shift ${actualAssignment.shiftId} (Assignment ID: ${actualAssignment.id})');
+          return actualAssignment.shiftId; // ✅ Use saved assignment
+        }
+
+        // Priority 2: Fallback to pattern (predicted schedule)
+        if (pattern != null && pattern.patternData.isNotEmpty) {
+          // PORTAL LOGIC: Pattern cycles every 7 days based on day-of-month
+          // dayIndex = 0,1,2,...30 (for Dec: 0-30)
+          // patternIndex = dayIndex % 7 (repeats every 7 days)
+          // Dec 1 → dayIndex=0 → pattern[0]
+          // Dec 8 → dayIndex=7 → pattern[0] (cycle repeats)
+          final patternIndex = dayIndex % 7;
+
+          if (patternIndex >= 0 &&
+              patternIndex < pattern.patternData[0].length) {
+            final shiftId = pattern.patternData[0][patternIndex];
+            print(
+                '  📅 Day $day (dayIndex=$dayIndex): pattern[$patternIndex] = Shift $shiftId');
+            return shiftId; // ✅ Use pattern
+          }
+        }
+
+        // Priority 3: Default to OFF (0)
+        return 0; // ❌ OFF
+      });
+
+      // Find first OFF day and day of week
+      final firstOffDay = calculatedShifts.indexOf(0) + 1;
+      int offDayOfWeek = 0;
+
+      if (firstOffDay > 0 && firstOffDay <= daysInMonth) {
+        final offDate =
+            DateTime(selectedMonth.year, selectedMonth.month, firstOffDay);
+        offDayOfWeek = offDate.weekday;
+        // Convert Sunday (7) to highest priority for "last" sorting
+        if (offDayOfWeek == DateTime.sunday) offDayOfWeek = 7;
+      }
+
+      return UserWithPattern(
+        user: user,
+        pattern: pattern,
+        calculatedShifts: calculatedShifts,
+        firstOffDay: firstOffDay > 0 ? firstOffDay : 999,
+        offDayOfWeek: offDayOfWeek,
+      );
+    }).toList();
   }
 
   Future<void> _showAssignmentDialog({DateTime? date}) async {
@@ -1110,29 +1334,23 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
     final lastDay = DateTime(_selectedMonth.year, _selectedMonth.month + 1, 0);
     final daysInMonth = lastDay.day;
 
-    // Filter only security users (role = 'security')
-    var securityUsers = _users.where((u) => u.role == 'security').toList();
+    // Filter only security users (role = 'security') from roster data
+    var securityRosterData = _rosterData
+        .where((userWithPattern) => userWithPattern.user.role == 'security')
+        .toList();
 
-    // Apply sorting based on selected method
-    if (_gridSortMethod == 'alpha-asc') {
-      // Alphabetically A-Z
-      securityUsers.sort((a, b) => a.name.compareTo(b.name));
-    } else if (_gridSortMethod == 'alpha-desc') {
-      // Alphabetically Z-A
-      securityUsers.sort((a, b) => b.name.compareTo(a.name));
-    } else if (_gridSortMethod == 'off-day') {
-      // Sort by OFF day (find first OFF day in current month)
-      securityUsers.sort((a, b) {
-        final aOffDay = _getFirstOffDay(a);
-        final bOffDay = _getFirstOffDay(b);
-        if (aOffDay == -1 && bOffDay == -1) return 0;
-        if (aOffDay == -1) return 1; // No OFF day goes last
-        if (bOffDay == -1) return -1;
-        return aOffDay.compareTo(bOffDay);
-      });
+    // Apply sorting based on selected method (sama seperti portal)
+    if (_gridSortMethod == 'first') {
+      // Sort by first OFF day NUMBER (1, 2, 3, ...)
+      securityRosterData.sort((a, b) => a.firstOffDay.compareTo(b.firstOffDay));
+    } else if (_gridSortMethod == 'last') {
+      // Sort by day of WEEK descending (Sunday=7, Saturday=6, ..., Monday=1)
+      // Higher day of week = closer to weekend = goes first
+      securityRosterData
+          .sort((a, b) => b.offDayOfWeek.compareTo(a.offDayOfWeek));
     }
 
-    if (securityUsers.isEmpty) {
+    if (securityRosterData.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -1215,35 +1433,24 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
                       ),
                       items: [
                         DropdownMenuItem(
-                          value: 'alpha-asc',
+                          value: 'first',
                           child: Row(
                             children: [
-                              Icon(Icons.sort_by_alpha,
+                              Icon(Icons.calendar_today,
                                   size: 16, color: Colors.blue),
                               SizedBox(width: 6),
-                              Text('Alfabetis (A-Z)'),
+                              Text('First OFF Day'),
                             ],
                           ),
                         ),
                         DropdownMenuItem(
-                          value: 'alpha-desc',
+                          value: 'last',
                           child: Row(
                             children: [
-                              Icon(Icons.sort_by_alpha,
+                              Icon(Icons.weekend,
                                   size: 16, color: Colors.orange),
                               SizedBox(width: 6),
-                              Text('Alfabetis (Z-A)'),
-                            ],
-                          ),
-                        ),
-                        DropdownMenuItem(
-                          value: 'off-day',
-                          child: Row(
-                            children: [
-                              Icon(Icons.event_busy,
-                                  size: 16, color: Colors.red),
-                              SizedBox(width: 6),
-                              Text('Berdasarkan OFF Day'),
+                              Text('Last OFF Day (Weekend)'),
                             ],
                           ),
                         ),
@@ -1294,11 +1501,12 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
                     _buildGridHeader(daysInMonth, isDark),
 
                     // User rows
-                    ...securityUsers.map((user) => _buildGridUserRow(
-                          user,
-                          daysInMonth,
-                          isDark,
-                        )),
+                    ...securityRosterData
+                        .map((userWithPattern) => _buildGridUserRow(
+                              userWithPattern,
+                              daysInMonth,
+                              isDark,
+                            )),
                   ],
                 ),
               ),
@@ -1403,7 +1611,9 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
     );
   }
 
-  Widget _buildGridUserRow(User user, int daysInMonth, bool isDark) {
+  Widget _buildGridUserRow(
+      UserWithPattern userWithPattern, int daysInMonth, bool isDark) {
+    final user = userWithPattern.user;
     return Container(
       decoration: BoxDecoration(
         border: Border(
@@ -1450,7 +1660,10 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
             final dayStr = date.day.toString().padLeft(2, '0');
             final dateKey = '$year-$month-$dayStr';
 
-            // Find assignment for this user on this date
+            // Get calculated shift ID from pattern fallback
+            final calculatedShiftId = userWithPattern.calculatedShifts[index];
+
+            // Find actual assignment for edit/delete functionality
             final dayAssignments = _assignments[dateKey] ?? [];
             final assignment = dayAssignments.firstWhere(
               (a) => a.userId == user.id,
@@ -1463,7 +1676,14 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
               ),
             );
 
-            return _buildGridCell(user, date, dateKey, assignment, isDark);
+            return _buildGridCell(
+              user,
+              date,
+              dateKey,
+              assignment,
+              calculatedShiftId, // Pass calculated shift ID
+              isDark,
+            );
           }),
         ],
       ),
@@ -1475,21 +1695,31 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
     DateTime date,
     String dateKey,
     ShiftAssignment assignment,
+    int calculatedShiftId, // Shift ID from pattern fallback
     bool isDark,
   ) {
-    final hasAssignment = assignment.id != -1;
+    final hasActualAssignment = assignment.id != -1;
     final isWeekend =
         date.weekday == DateTime.saturday || date.weekday == DateTime.sunday;
 
+    // Determine which shift to display:
+    // 1. If has actual assignment, use assignment.shiftId
+    // 2. Otherwise, use calculatedShiftId (from pattern or 0)
+    final displayShiftId =
+        hasActualAssignment ? assignment.shiftId : calculatedShiftId;
+
     // Find shift details
     Shift? shift;
-    if (hasAssignment && assignment.shiftId != -1) {
+    if (displayShiftId > 0) {
       try {
-        shift = _shifts.firstWhere((s) => s.id == assignment.shiftId);
+        shift = _shifts.firstWhere((s) => s.id == displayShiftId);
       } catch (e) {
         // Shift not found
       }
     }
+
+    // Determine if this is OFF (0) or no shift found
+    final isOff = displayShiftId == 0 || shift == null;
 
     return InkWell(
       onTap: () => _showQuickShiftSelector(user, date, dateKey, assignment),
@@ -1510,13 +1740,22 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
           ),
         ),
         child: Center(
-          child: hasAssignment && shift != null
+          child: !isOff && shift != null
               ? Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: shift.colorValue.withOpacity(0.15),
+                    color: shift.colorValue.withOpacity(hasActualAssignment
+                        ? 0.15
+                        : 0.08), // Lighter if pattern
                     borderRadius: BorderRadius.circular(8),
+                    border: hasActualAssignment
+                        ? null
+                        : Border.all(
+                            color: shift.colorValue.withOpacity(0.3),
+                            width: 1,
+                            style: BorderStyle.solid,
+                          ),
                   ),
                   child: Text(
                     shift.name.split(' ').last, // Get "Pagi", "Sore", "Malam"
@@ -1528,7 +1767,7 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
                   ),
                 )
               : Icon(
-                  Icons.event_busy_rounded,
+                  Icons.event_busy_rounded, // Pertahankan icon untuk OFF
                   size: 24,
                   color: Colors.red.shade600,
                 ),

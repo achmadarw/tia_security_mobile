@@ -6,6 +6,57 @@ import '../models/shift_assignment.dart';
 class ShiftAssignmentService {
   final String baseUrl = ApiConfig.baseUrl;
 
+  // Get assignments for a specific month using portal endpoint
+  // This endpoint uses month-based filtering like portal (more accurate)
+  Future<List<ShiftAssignment>> getMonthAssignments(
+    String token,
+    String month, {
+    int? userId,
+  }) async {
+    final queryParams = <String, String>{'month': month};
+    if (userId != null) {
+      queryParams['user_id'] = userId.toString();
+    }
+
+    final uri = Uri.parse('$baseUrl/roster/shift-assignments')
+        .replace(queryParameters: queryParams);
+
+    final response = await http.get(
+      uri,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      final List assignmentsJson = data['data'];
+
+      // DEBUG: Log raw response details
+      print(
+          '🔍 DEBUG API Response: Total assignments=${assignmentsJson.length}');
+
+      // Find and log Ilham's first 3 assignments RAW
+      final ilhamRaw =
+          assignmentsJson.where((a) => a['user_id'] == 8).take(3).toList();
+      if (ilhamRaw.isNotEmpty) {
+        print('🔍 RAW Ilham assignments from API:');
+        for (var i = 0; i < ilhamRaw.length; i++) {
+          final a = ilhamRaw[i];
+          print(
+              '  Ilham RAW[$i]: id=${a['id']}, date="${a['assignment_date']}", shift=${a['shift_id']}');
+        }
+      }
+
+      return assignmentsJson
+          .map((json) => ShiftAssignment.fromJson(json))
+          .toList();
+    } else {
+      throw Exception('Failed to load month assignments: ${response.body}');
+    }
+  }
+
   // Get assignments by date range
   Future<List<ShiftAssignment>> getCalendar(
     String token, {

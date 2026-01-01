@@ -66,17 +66,26 @@ class ShiftAssignment {
   static DateTime _parseDate(String dateString) {
     print('DEBUG ShiftAssignment: Parsing date string: "$dateString"');
 
-    // If it's a UTC timestamp (contains 'T'), parse and convert to local date
+    // If it's a timestamp with 'T', extract JUST the date part before parsing
+    // This prevents timezone conversion issues
+    // Examples:
+    // - "2025-12-02T00:00:00+07" → "2025-12-02" → Dec 2 ✓
+    // - "2025-12-01T17:00:00.000Z" → "2025-12-01" → Dec 1 ✓
     if (dateString.contains('T')) {
-      final utcDateTime = DateTime.parse(dateString); // Parse as UTC
-      final localDateTime = utcDateTime.toLocal(); // Convert to local timezone
+      // Extract date part (YYYY-MM-DD) before 'T'
+      final datePart = dateString.split('T')[0];
+      final parts = datePart.split('-');
 
-      // Return date only (no time component)
-      final result =
-          DateTime(localDateTime.year, localDateTime.month, localDateTime.day);
-      print(
-          'DEBUG ShiftAssignment: Parsed UTC timestamp to local date: $result (UTC: $utcDateTime → Local: $localDateTime)');
-      return result;
+      if (parts.length == 3) {
+        final year = int.parse(parts[0]);
+        final month = int.parse(parts[1]);
+        final day = int.parse(parts[2]);
+
+        final result = DateTime(year, month, day);
+        print(
+            'DEBUG ShiftAssignment: Extracted date from timestamp: $result (from "$dateString")');
+        return result;
+      }
     }
 
     // If it's just a date string "YYYY-MM-DD", parse directly
@@ -93,7 +102,7 @@ class ShiftAssignment {
 
     // Fallback to DateTime.parse if format is different
     print('DEBUG ShiftAssignment: Using fallback DateTime.parse');
-    return DateTime.parse(dateString).toLocal();
+    return DateTime.parse(dateString);
   }
 
   Map<String, dynamic> toJson() {
