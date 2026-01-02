@@ -611,7 +611,6 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
           const SizedBox(width: 8),
           // View toggle button
           Container(
-            padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
               color: isDark
                   ? Colors.white.withOpacity(0.1)
@@ -624,8 +623,6 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
                 color: isDark ? AppColors.darkTextPrimary : Colors.white,
                 size: 24,
               ),
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
               onPressed: () {
                 setState(() {
                   _isGridView = !_isGridView;
