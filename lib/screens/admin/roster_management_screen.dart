@@ -892,10 +892,11 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
   }
 
   Widget _buildAssignmentTile(ShiftAssignment assignment, bool isDark) {
-    // Get color for the shift
+    // Get shift details
     Color shiftColor = AppColors.primary;
+    Shift? shift;
     try {
-      final shift = _shifts.firstWhere((s) => s.id == assignment.shiftId);
+      shift = _shifts.firstWhere((s) => s.id == assignment.shiftId);
       shiftColor = shift.colorValue;
     } catch (e) {
       // Use default if shift not found
@@ -916,20 +917,27 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
       ),
       child: Row(
         children: [
-          // Avatar with shift color
+          // Avatar with shift code
           Container(
-            width: 45,
-            height: 45,
+            width: 50,
+            height: 50,
             decoration: BoxDecoration(
               color: shiftColor.withOpacity(0.15),
               shape: BoxShape.circle,
+              border: Border.all(
+                color: shiftColor.withOpacity(0.3),
+                width: 2,
+              ),
             ),
             child: Center(
               child: Text(
-                assignment.userName?.substring(0, 1).toUpperCase() ?? 'U',
+                shift?.code ??
+                    assignment.shiftCode ??
+                    assignment.userName?.substring(0, 1).toUpperCase() ??
+                    'U',
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
-                  fontSize: 18,
+                  fontSize: 20,
                   color: shiftColor,
                 ),
               ),
@@ -941,6 +949,7 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // User name
                 Text(
                   assignment.userName ?? 'Unknown',
                   style: TextStyle(
@@ -951,28 +960,91 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
                         : AppColors.lightTextPrimary,
                   ),
                 ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: shiftColor.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        '${assignment.shiftName} (${assignment.getFormattedStartTime()}-${assignment.getFormattedEndTime()})',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: shiftColor,
-                        ),
-                      ),
+                const SizedBox(height: 6),
+
+                // Shift info section
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: shiftColor.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: shiftColor.withOpacity(0.2),
+                      width: 1,
                     ),
-                  ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Shift code and name
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.access_time,
+                            size: 14,
+                            color: shiftColor,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Shift ${shift?.code ?? assignment.shiftCode ?? ''}',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: shiftColor,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            '•',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: isDark
+                                  ? AppColors.darkTextSecondary
+                                  : AppColors.lightTextSecondary,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              assignment.shiftName ?? 'Unknown',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: isDark
+                                    ? AppColors.darkTextPrimary
+                                    : AppColors.lightTextPrimary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      // Time range
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.schedule,
+                            size: 14,
+                            color: isDark
+                                ? AppColors.darkTextSecondary
+                                : AppColors.lightTextSecondary,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            shift != null
+                                ? '${shift.getFormattedStartTime()} - ${shift.getFormattedEndTime()}'
+                                : '${assignment.getFormattedStartTime()} - ${assignment.getFormattedEndTime()}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: isDark
+                                  ? AppColors.darkTextSecondary
+                                  : AppColors.lightTextSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
                 if (assignment.isReplacement) ...[
                   const SizedBox(height: 4),
