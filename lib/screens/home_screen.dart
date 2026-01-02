@@ -131,10 +131,24 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             final minutes = lastShift['minutes'] ?? 0;
             _currentDuration = '${hours}j ${minutes}m';
 
-            if (_shiftCount > 1) {
-              _statusText = 'Semua Shift Selesai';
+            // Determine status based on early leave and shift count
+            final isEarlyLeave = lastShift['isEarlyLeave'] == true;
+
+            if (isEarlyLeave) {
+              // User left early before shift ended
+              _statusText = 'Pulang Cepat';
+            } else if (_shiftCount > 1) {
+              // Check if there are more shifts scheduled
+              final hasMoreShifts =
+                  _todayAssignments.length > _completedShifts.length;
+              if (hasMoreShifts) {
+                _statusText = 'Sedang Istirahat'; // Between shifts
+              } else {
+                _statusText = 'Semua Shift Selesai';
+              }
             } else {
-              _statusText = 'Sedang Istirahat';
+              // Single shift completed normally
+              _statusText = 'Shift Selesai';
             }
           } else {
             _checkInTime = '--:--';
