@@ -9,6 +9,11 @@
     <!-- Internet permission -->
     <uses-permission android:name="android.permission.INTERNET" />
     
+    <!-- Storage permissions for PDF export -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+    
     <application
         android:label="tia_mobile"
         android:name="${applicationName}"
