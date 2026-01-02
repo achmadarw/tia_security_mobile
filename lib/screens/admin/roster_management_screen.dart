@@ -1156,7 +1156,7 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
     // Get color for the shift
     Color shiftColor = AppColors.primary;
     try {
-      final shift = _shifts.firstWhere((s) => s.name == assignment.shiftName);
+      final shift = _shifts.firstWhere((s) => s.id == assignment.shiftId);
       shiftColor = shift.colorValue;
     } catch (e) {
       // Use default if shift not found
@@ -1292,7 +1292,7 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
       builder: (context) => AlertDialog(
         title: const Text('Konfirmasi'),
         content: Text(
-          'Yakin ingin menghapus assignment "${assignment.userName}" dari "${assignment.shiftName}"?',
+          'Yakin ingin menghapus assignment "${assignment.userName}" dari shift "${assignment.shiftCode ?? assignment.shiftName}"?',
         ),
         actions: [
           TextButton(
@@ -1758,9 +1758,12 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
                           ),
                   ),
                   child: Text(
-                    shift.name.split(' ').last, // Get "Pagi", "Sore", "Malam"
+                    shift.code ??
+                        shift.name
+                            .split(' ')
+                            .last, // Use code (e.g., "1", "2", "3"), fallback to name
                     style: TextStyle(
-                      fontSize: 11,
+                      fontSize: 16,
                       fontWeight: FontWeight.bold,
                       color: shift.colorValue,
                     ),
@@ -1776,7 +1779,7 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
     );
   }
 
-  // Quick shift selector bottom sheet
+  // Show shift detail information bottom sheet
   Future<void> _showQuickShiftSelector(
     User user,
     DateTime date,
@@ -1785,6 +1788,45 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
   ) async {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final hasAssignment = currentAssignment.id != -1;
+
+    // Determine shift details
+    Shift? shift;
+    String shiftStatus = '';
+
+    if (hasAssignment) {
+      // Has actual assignment in database
+      try {
+        shift = _shifts.firstWhere((s) => s.id == currentAssignment.shiftId);
+        shiftStatus = 'Assignment Aktual';
+      } catch (e) {
+        shiftStatus = 'Shift tidak ditemukan';
+      }
+    } else {
+      // Check from pattern
+      final userWithPattern = _rosterData.firstWhere(
+        (u) => u.user.id == user.id,
+        orElse: () => _rosterData.first,
+      );
+
+      final lastDay =
+          DateTime(_selectedMonth.year, _selectedMonth.month + 1, 0);
+      final daysInMonth = lastDay.day;
+      final dayIndex = date.day - 1;
+
+      if (dayIndex < userWithPattern.calculatedShifts.length) {
+        final calculatedShiftId = userWithPattern.calculatedShifts[dayIndex];
+        if (calculatedShiftId > 0) {
+          try {
+            shift = _shifts.firstWhere((s) => s.id == calculatedShiftId);
+            shiftStatus = 'Dari Pattern';
+          } catch (e) {
+            shiftStatus = 'Pattern shift tidak ditemukan';
+          }
+        } else {
+          shiftStatus = 'OFF (Libur)';
+        }
+      }
+    }
 
     await showModalBottomSheet(
       context: context,
@@ -1802,7 +1844,7 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header
+            // Header with close button
             Row(
               children: [
                 Container(
@@ -1811,225 +1853,131 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
                     color: AppColors.primary.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Icon(Icons.person, color: AppColors.primary, size: 20),
+                  child: Icon(Icons.info_outline,
+                      color: AppColors.primary, size: 20),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        user.name,
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: isDark
-                              ? AppColors.darkTextPrimary
-                              : AppColors.lightTextPrimary,
-                        ),
-                      ),
-                      Text(
-                        DateFormat('EEEE, dd MMM yyyy').format(date),
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: isDark
-                              ? AppColors.darkTextSecondary
-                              : AppColors.lightTextSecondary,
-                        ),
-                      ),
-                    ],
+                  child: Text(
+                    'Detail Shift Assignment',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: isDark
+                          ? AppColors.darkTextPrimary
+                          : AppColors.lightTextPrimary,
+                    ),
                   ),
+                ),
+                IconButton(
+                  icon: Icon(
+                    Icons.close,
+                    color: isDark
+                        ? AppColors.darkTextSecondary
+                        : AppColors.lightTextSecondary,
+                  ),
+                  onPressed: () => Navigator.pop(context),
                 ),
               ],
             ),
             const SizedBox(height: 24),
 
-            // Shift chips
-            Text(
-              'Pilih Shift:',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: isDark
-                    ? AppColors.darkTextPrimary
-                    : AppColors.lightTextPrimary,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                ..._shifts.where((s) => s.isActive).map((shift) {
-                  final isSelected =
-                      hasAssignment && currentAssignment.shiftId == shift.id;
-                  return _buildShiftChip(
-                    shift,
-                    isSelected,
-                    () async {
-                      Navigator.pop(context);
-                      await _assignShift(user, date, shift);
-                    },
-                  );
-                }),
-                // Off/Remove chip
-                _buildOffChip(
-                  hasAssignment,
-                  () async {
-                    Navigator.pop(context);
-                    if (hasAssignment) {
-                      await _removeAssignment(currentAssignment);
-                    }
-                  },
-                ),
-              ],
+            // User Info
+            _buildInfoRow(
+              Icons.person,
+              'Personil',
+              user.name,
+              isDark,
             ),
             const SizedBox(height: 16),
-          ],
-        ),
-      ),
-    );
-  }
 
-  Widget _buildShiftChip(Shift shift, bool isSelected, VoidCallback onTap) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(
-          color:
-              isSelected ? shift.colorValue : shift.colorValue.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: shift.colorValue,
-            width: isSelected ? 2 : 1,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.schedule,
-              size: 18,
-              color: isSelected ? Colors.white : shift.colorValue,
+            // Date Info
+            _buildInfoRow(
+              Icons.calendar_today,
+              'Tanggal',
+              DateFormat('EEEE, dd MMMM yyyy').format(date),
+              isDark,
             ),
-            const SizedBox(width: 8),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  shift.name,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                    color: isSelected ? Colors.white : shift.colorValue,
-                  ),
-                ),
-                Text(
-                  '${shift.getFormattedStartTime()}-${shift.getFormattedEndTime()}',
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: isSelected
-                        ? Colors.white.withOpacity(0.9)
-                        : shift.colorValue.withOpacity(0.8),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+            const SizedBox(height: 16),
 
-  Widget _buildOffChip(bool hasAssignment, VoidCallback onTap) {
-    return InkWell(
-      onTap: hasAssignment ? onTap : null,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(
-          color: hasAssignment
-              ? Colors.red.withOpacity(0.1)
-              : Colors.grey.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: hasAssignment ? Colors.red : Colors.grey,
-            width: 1,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              hasAssignment ? Icons.delete_outline : Icons.event_busy,
-              size: 18,
-              color: hasAssignment ? Colors.red : Colors.grey,
-            ),
-            const SizedBox(width: 8),
-            Text(
-              hasAssignment ? 'Hapus Assignment' : 'Off',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.bold,
-                color: hasAssignment ? Colors.red : Colors.grey,
+            // Shift Info
+            if (shift != null) ...[
+              _buildInfoRow(
+                Icons.schedule,
+                'Shift',
+                '${shift.code ?? shift.name} - ${shift.name}',
+                isDark,
               ),
-            ),
+              const SizedBox(height: 16),
+
+              // Shift Time
+              _buildInfoRow(
+                Icons.access_time,
+                'Jam Kerja',
+                '${shift.getFormattedStartTime()} - ${shift.getFormattedEndTime()}',
+                isDark,
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            const SizedBox(height: 8),
           ],
         ),
       ),
     );
   }
 
-  Future<void> _assignShift(User user, DateTime date, Shift shift) async {
-    try {
-      final token = widget.authService.accessToken;
-      if (token == null) throw Exception('No token');
-
-      await _assignmentService.createAssignment(
-        token,
-        userId: user.id,
-        shiftId: shift.id,
-        assignmentDate: date,
-        isReplacement: false,
-      );
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${user.name} assigned to ${shift.name}'),
-          duration: const Duration(seconds: 1),
+  Widget _buildInfoRow(IconData icon, String label, String value, bool isDark) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: isDark
+                ? AppColors.darkTextSecondary.withOpacity(0.1)
+                : AppColors.lightTextSecondary.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(
+            icon,
+            size: 16,
+            color: isDark
+                ? AppColors.darkTextSecondary
+                : AppColors.lightTextSecondary,
+          ),
         ),
-      );
-
-      _loadData();
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: ${e.toString()}')),
-      );
-    }
-  }
-
-  Future<void> _removeAssignment(ShiftAssignment assignment) async {
-    try {
-      final token = widget.authService.accessToken;
-      if (token == null) throw Exception('No token');
-
-      await _assignmentService.deleteAssignment(token, assignment.id);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Assignment removed'),
-          duration: Duration(seconds: 1),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: isDark
+                      ? AppColors.darkTextSecondary
+                      : AppColors.lightTextSecondary,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: isDark
+                      ? AppColors.darkTextPrimary
+                      : AppColors.lightTextPrimary,
+                ),
+              ),
+            ],
+          ),
         ),
-      );
-
-      _loadData();
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: ${e.toString()}')),
-      );
-    }
+      ],
+    );
   }
 
   // Helper: Find first OFF day (no assignment) for a user in current month

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 class Shift {
   final int id;
   final String name;
+  final String? code; // Shift code (e.g., "1", "2", "3")
   final String startTime; // Format: "HH:mm:ss"
   final String endTime;
   final String? description;
@@ -14,6 +15,7 @@ class Shift {
   Shift({
     required this.id,
     required this.name,
+    this.code,
     required this.startTime,
     required this.endTime,
     this.description,
@@ -27,6 +29,7 @@ class Shift {
     return Shift(
       id: json['id'],
       name: json['name'],
+      code: json['code'],
       startTime: json['start_time'],
       endTime: json['end_time'],
       description: json['description'],
@@ -45,6 +48,7 @@ class Shift {
     return {
       'id': id,
       'name': name,
+      'code': code,
       'start_time': startTime,
       'end_time': endTime,
       'description': description,

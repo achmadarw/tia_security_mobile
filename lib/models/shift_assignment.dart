@@ -14,6 +14,7 @@ class ShiftAssignment {
   final String? userName;
   final String? userPhone;
   final String? shiftName;
+  final String? shiftCode;
   final String? startTime;
   final String? endTime;
   final String? replacedUserName;
@@ -32,6 +33,7 @@ class ShiftAssignment {
     this.userName,
     this.userPhone,
     this.shiftName,
+    this.shiftCode,
     this.startTime,
     this.endTime,
     this.replacedUserName,
@@ -56,6 +58,7 @@ class ShiftAssignment {
       userName: json['user_name'],
       userPhone: json['user_phone'],
       shiftName: json['shift_name'],
+      shiftCode: json['shift_code'],
       startTime: json['start_time'],
       endTime: json['end_time'],
       replacedUserName: json['replaced_user_name'],
@@ -144,6 +147,7 @@ class ShiftAssignment {
     String? userName,
     String? userPhone,
     String? shiftName,
+    String? shiftCode,
     String? startTime,
     String? endTime,
     String? replacedUserName,
@@ -162,6 +166,7 @@ class ShiftAssignment {
       userName: userName ?? this.userName,
       userPhone: userPhone ?? this.userPhone,
       shiftName: shiftName ?? this.shiftName,
+      shiftCode: shiftCode ?? this.shiftCode,
       startTime: startTime ?? this.startTime,
       endTime: endTime ?? this.endTime,
       replacedUserName: replacedUserName ?? this.replacedUserName,
