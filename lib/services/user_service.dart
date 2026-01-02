@@ -204,6 +204,51 @@ class UserService {
       print('[UserService] Number of embeddings: ${embeddings?.length ?? 0}');
 
       final token = await _getToken();
+
+      // NEW: If embeddings provided, use new endpoint (mobile-only embedding)
+      if (embeddings != null && embeddings.isNotEmpty) {
+        print('[UserService] Using new /register-embeddings endpoint');
+
+        final response = await http.post(
+          Uri.parse('${ApiConfig.baseUrl}/face/register-embeddings'),
+          headers: {
+            'Authorization': 'Bearer $token',
+            'Content-Type': 'application/json',
+          },
+          body: json.encode({
+            'user_id': userId,
+            'embeddings': embeddings,
+            'metadata': {
+              'total_captured': images.length,
+              'timestamp': DateTime.now().toIso8601String(),
+              'version': '2.0',
+              'method': 'mobile_direct',
+            },
+          }),
+        );
+
+        print('[UserService] Response status: ${response.statusCode}');
+
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          print('[UserService] ✅ Registration successful');
+          return {
+            'success': true,
+            'message': data['message'],
+            'embeddings_count': data['embeddings_count'],
+          };
+        } else if (response.statusCode == 401) {
+          // Token expired or invalid
+          final error = json.decode(response.body);
+          throw Exception('Token expired. Silakan login ulang.');
+        } else {
+          final error = json.decode(response.body);
+          throw Exception(error['error'] ?? 'Registration failed');
+        }
+      }
+
+      // OLD: Fallback to old endpoint (with Python script) if no embeddings
+      print('[UserService] Using legacy /register endpoint');
       final request = http.MultipartRequest(
         'POST',
         Uri.parse('${ApiConfig.baseUrl}${ApiConfig.faceRegister}'),
@@ -214,12 +259,6 @@ class UserService {
       }
 
       request.fields['user_id'] = userId.toString();
-
-      // Add embeddings if provided
-      if (embeddings != null && embeddings.isNotEmpty) {
-        request.fields['embeddings'] = json.encode(embeddings);
-        print('[UserService] Embeddings added to request');
-      }
 
       // Add images
       for (int i = 0; i < images.length; i++) {

@@ -12,14 +12,13 @@ import '../utils/error_handler.dart';
 import '../config/theme.dart';
 import 'home_screen.dart';
 
-// Quick liveness detection steps for login
-enum LivenessStep {
-  initial, // Initial face detection
-  blinkFirst, // First blink
-  blinkSecond, // Second blink + capture
-  turnLeft, // Turn head left (random)
-  turnRight, // Turn head right (random)
-  completed, // Liveness completed
+// Simplified login - NO liveness detection required
+// Just detect frontal face and capture
+enum LoginStep {
+  detecting, // Detecting face
+  readyToCapture, // Face detected, ready to capture
+  processing, // Processing login
+  completed, // Login completed
 }
 
 class FaceLoginScreen extends StatefulWidget {
@@ -48,12 +47,11 @@ class _FaceLoginScreenState extends State<FaceLoginScreen> {
 
   List<Face> _detectedFaces = [];
 
-  // Liveness detection
-  LivenessStep _currentLivenessStep = LivenessStep.initial;
-  bool _eyesWereOpen = false;
-  List<File> _capturedImages = [];
-  int _currentStep = 0;
-  final int _totalSteps = 2; // blink + turn
+  // Simplified login - no liveness
+  LoginStep _currentStep = LoginStep.detecting;
+  bool _faceDetectedStable = false;
+  int _stableFrames = 0;
+  final int _requiredStableFrames = 5; // 5 frames @ ~30fps = ~150ms stability
 
   @override
   void initState() {
@@ -164,177 +162,52 @@ class _FaceLoginScreenState extends State<FaceLoginScreen> {
 
     final face = faces.first;
 
-    switch (_currentLivenessStep) {
-      case LivenessStep.initial:
-        // Face detected, start liveness with blink
-        _currentLivenessStep = LivenessStep.blinkFirst;
-        _statusMessage = 'Kedipkan mata Anda';
-        _statusColor = Colors.blue;
-        break;
+    // Simplified login flow - just check frontal face stability
+    if (_currentStep == LoginStep.detecting) {
+      // Check if face is reasonably frontal (lenient check)
+      final yaw = face.headEulerAngleY?.abs() ?? 0;
+      final roll = face.headEulerAngleZ?.abs() ?? 0;
 
-      case LivenessStep.blinkFirst:
-        _detectBlink(face, isFirstBlink: true);
-        break;
+      if (yaw < 30 && roll < 30) {
+        // Face is frontal enough
+        _stableFrames++;
 
-      case LivenessStep.blinkSecond:
-        _detectBlink(face, isFirstBlink: false);
-        break;
-
-      case LivenessStep.turnLeft:
-        _detectHeadTurn(face, isLeft: true);
-        break;
-
-      case LivenessStep.turnRight:
-        _detectHeadTurn(face, isLeft: false);
-        break;
-
-      case LivenessStep.completed:
-        // Already completed, processing
-        break;
-    }
-  }
-
-  void _detectBlink(Face face, {required bool isFirstBlink}) {
-    final leftEyeProb = face.leftEyeOpenProbability ?? 1.0;
-    final rightEyeProb = face.rightEyeOpenProbability ?? 1.0;
-
-    // Eyes are open
-    if (leftEyeProb > 0.7 && rightEyeProb > 0.7) {
-      if (!_eyesWereOpen) {
-        _eyesWereOpen = true;
-        _statusMessage =
-            isFirstBlink ? 'Kedipkan mata Anda' : 'Kedipkan sekali lagi';
-        _statusColor = Colors.blue;
-      }
-    }
-
-    // Eyes are closed (blink detected!)
-    if (_eyesWereOpen && leftEyeProb < 0.3 && rightEyeProb < 0.3) {
-      if (isFirstBlink) {
-        // First blink completed
-        _currentLivenessStep = LivenessStep.blinkSecond;
-        _eyesWereOpen = false;
-        _statusMessage = 'Bagus! Kedipkan sekali lagi';
-        _statusColor = Colors.green;
+        if (_stableFrames >= _requiredStableFrames) {
+          // Face stable for enough frames
+          setState(() {
+            _currentStep = LoginStep.readyToCapture;
+            _faceDetectedStable = true;
+            _statusMessage = 'Wajah terdeteksi! Tap untuk login';
+            _statusColor = Colors.green;
+          });
+        } else {
+          setState(() {
+            _statusMessage =
+                'Hadap langsung ke kamera... (${_stableFrames}/$_requiredStableFrames)';
+            _statusColor = Colors.orange;
+          });
+        }
       } else {
-        // Second blink completed - auto capture after eyes open
-        _eyesWereOpen = false;
-        _waitForEyesOpenThenCapture();
-      }
-    }
-  }
-
-  Future<void> _waitForEyesOpenThenCapture() async {
-    // Wait a bit for eyes to open again
-    await Future.delayed(const Duration(milliseconds: 500));
-
-    if (!mounted) return;
-
-    if (_detectedFaces.isNotEmpty) {
-      final face = _detectedFaces.first;
-      final leftEyeProb = face.leftEyeOpenProbability ?? 0.0;
-      final rightEyeProb = face.rightEyeOpenProbability ?? 0.0;
-
-      // Eyes open, capture!
-      if (leftEyeProb > 0.7 && rightEyeProb > 0.7) {
-        await _captureStep(
-            restartStream: true); // Restart for head turn detection
-
-        if (!mounted) return;
-
+        // Reset if face not frontal
+        _stableFrames = 0;
         setState(() {
-          _currentStep++;
-
-          // Proceed to random head turn
-          _currentLivenessStep = Random().nextBool()
-              ? LivenessStep.turnLeft
-              : LivenessStep.turnRight;
-
-          _statusMessage = _currentLivenessStep == LivenessStep.turnLeft
-              ? 'Palingkan kepala ke KIRI'
-              : 'Palingkan kepala ke KANAN';
+          _statusMessage = 'Hadap langsung ke kamera';
           _statusColor = Colors.blue;
         });
       }
     }
   }
 
-  void _detectHeadTurn(Face face, {required bool isLeft}) {
-    final headYaw = face.headEulerAngleY ?? 0.0;
+  Future<void> _processLogin() async {
+    if (_isProcessing || _currentStep != LoginStep.readyToCapture) return;
 
-    if (isLeft) {
-      // Detect left turn
-      if (headYaw < -20) {
-        _captureStepAndComplete();
-      } else if (headYaw < -10) {
-        _statusMessage = 'Palingkan lebih ke KIRI';
-        _statusColor = Colors.orange;
-      }
-    } else {
-      // Detect right turn
-      if (headYaw > 20) {
-        _captureStepAndComplete();
-      } else if (headYaw > 10) {
-        _statusMessage = 'Palingkan lebih ke KANAN';
-        _statusColor = Colors.orange;
-      }
-    }
-  }
-
-  Future<void> _captureStep({bool restartStream = true}) async {
-    try {
-      // Stop image stream temporarily
-      if (_cameraController != null &&
-          _cameraController!.value.isStreamingImages) {
-        await _cameraController!.stopImageStream();
-      }
-
-      // Capture image
-      final XFile imageFile = await _cameraController!.takePicture();
-      final File file = File(imageFile.path);
-      _capturedImages.add(file);
-
-      print(
-          '[LIVENESS] Captured image ${_capturedImages.length}: ${file.path}');
-
-      // Restart image stream only if requested
-      if (restartStream) {
-        await Future.delayed(const Duration(milliseconds: 300));
-        _startFaceDetection();
-      }
-    } catch (e) {
-      print('[LIVENESS] Capture error: $e');
-      if (mounted) {
-        _showError('Gagal mengambil foto. Silakan coba lagi.');
-      }
-    }
-  }
-
-  Future<void> _captureStepAndComplete() async {
-    // Don't restart stream on final capture
-    await _captureStep(restartStream: false);
-
-    if (!mounted) return;
-
-    setState(() {
-      _currentStep++;
-      _currentLivenessStep = LivenessStep.completed;
-    });
-
-    // Process login with captured images
-    await _processLoginWithLiveness();
-  }
-
-  Future<void> _processLoginWithLiveness() async {
-    if (_isProcessing) return;
-
-    print('[FACE_LOGIN] === Processing login with liveness ===');
-    print('[FACE_LOGIN] Captured images: ${_capturedImages.length}');
+    print('[FACE_LOGIN] === Processing login ===');
 
     if (!mounted) return;
 
     setState(() {
       _isProcessing = true;
+      _currentStep = LoginStep.processing;
       _statusMessage = 'Memproses wajah Anda...';
       _statusColor = Colors.blue;
     });
@@ -346,16 +219,11 @@ class _FaceLoginScreenState extends State<FaceLoginScreen> {
         await _cameraController!.stopImageStream();
       }
 
-      // Validate captured images
-      if (_capturedImages.isEmpty) {
-        print('[FACE_LOGIN] ERROR: No images captured');
-        _showError('Tidak ada foto yang berhasil diambil. Silakan coba lagi.');
-        return;
-      }
-
-      // Use the last captured image (from head turn) for recognition
-      final file = _capturedImages.last;
-      print('[FACE_LOGIN] Using image: ${file.path}');
+      // Capture image NOW
+      print('[FACE_LOGIN] Capturing image...');
+      final XFile imageFile = await _cameraController!.takePicture();
+      final File file = File(imageFile.path);
+      print('[FACE_LOGIN] Image captured: ${file.path}');
 
       print('[FACE_LOGIN] Detecting faces...');
       // Detect face
@@ -390,21 +258,60 @@ class _FaceLoginScreenState extends State<FaceLoginScreen> {
       print(
           '[FACE_LOGIN] Face extracted: ${faceImage.width}x${faceImage.height}');
 
-      // Generate embedding
+      // Generate embedding with quality checks
       if (!mounted) return;
 
       setState(() {
-        _statusMessage = 'Mengenali wajah Anda...';
+        _statusMessage = 'Memvalidasi kualitas foto...';
       });
 
-      print('[FACE_LOGIN] Generating embedding...');
+      print('[FACE_LOGIN] Generating embedding with quality checks...');
 
-      // Generate face embedding using TFLite model
+      // Generate face embedding using TFLite model with quality validation
       List<double> embedding;
       try {
-        embedding = await _faceRecognitionService.generateEmbedding(faceImage);
+        // NEW: Use quality-checked embedding generation (lenient mode for login)
+        final result =
+            await _faceRecognitionService.generateEmbeddingWithQuality(
+          faceImage,
+          face,
+          isStrictMode: false, // ← LENIENT mode untuk login!
+        );
+
+        if (result['success'] != true) {
+          // Quality check failed
+          final message = result['message'] ?? 'Kualitas foto kurang baik';
+          print('[FACE_LOGIN] Quality check failed: $message');
+
+          // Show user-friendly guidance
+          _showError(message);
+
+          // Log details for debugging
+          if (result['checks'] != null) {
+            final checks = result['checks'] as Map<String, bool>;
+            final failedChecks = checks.entries
+                .where((e) => !e.value)
+                .map((e) => e.key)
+                .join(', ');
+            print('[FACE_LOGIN] Failed quality checks: $failedChecks');
+          }
+
+          return;
+        }
+
+        embedding = result['embedding'] as List<double>;
+        final qualityScore = result['qualityScore'] ?? 0.0;
+
         print(
-            '[FACE_LOGIN] Embedding generated: ${embedding.length} dimensions');
+            '[FACE_LOGIN] ✅ Embedding generated: ${embedding.length} dimensions');
+        print(
+            '[FACE_LOGIN] Quality score: ${qualityScore.toStringAsFixed(1)}%');
+
+        // Update status
+        if (!mounted) return;
+        setState(() {
+          _statusMessage = 'Mengenali wajah Anda...';
+        });
       } catch (e) {
         print('[FACE_LOGIN] ERROR: Failed to generate embedding: $e');
         _showError('Gagal generate embedding. Silakan coba lagi.');
@@ -487,10 +394,9 @@ class _FaceLoginScreenState extends State<FaceLoginScreen> {
     setState(() {
       _isProcessing = false;
       _hasError = false;
-      _currentLivenessStep = LivenessStep.initial;
-      _eyesWereOpen = false;
-      _capturedImages.clear();
-      _currentStep = 0;
+      _currentStep = LoginStep.detecting;
+      _faceDetectedStable = false;
+      _stableFrames = 0;
       _statusMessage = 'Posisikan wajah Anda di dalam frame';
       _statusColor = AppColors.primary;
     });
@@ -623,32 +529,9 @@ class _FaceLoginScreenState extends State<FaceLoginScreen> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          // Progress dots
-                          if (_currentLivenessStep != LivenessStep.initial &&
-                              _currentLivenessStep != LivenessStep.completed &&
-                              !_hasError)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 12),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: List.generate(
-                                  _totalSteps,
-                                  (index) => Container(
-                                    margin: const EdgeInsets.symmetric(
-                                        horizontal: 4),
-                                    width: 10,
-                                    height: 10,
-                                    decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      color: index < _currentStep
-                                          ? Colors.green
-                                          : Colors.white.withOpacity(0.5),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
+                          // Status text
                           Row(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
                               if (_hasError)
                                 const Padding(
@@ -659,7 +542,7 @@ class _FaceLoginScreenState extends State<FaceLoginScreen> {
                                     size: 24,
                                   ),
                                 ),
-                              Expanded(
+                              Flexible(
                                 child: Text(
                                   _statusMessage,
                                   style: const TextStyle(
@@ -672,6 +555,7 @@ class _FaceLoginScreenState extends State<FaceLoginScreen> {
                               ),
                             ],
                           ),
+
                           // Retry button for errors
                           if (_hasError)
                             Padding(
@@ -711,32 +595,61 @@ class _FaceLoginScreenState extends State<FaceLoginScreen> {
                   ),
                 ),
 
-              // Info text at bottom (liveness auto-capture)
-              if (!_isProcessing &&
-                  _isInitialized &&
-                  !_hasError &&
-                  _currentLivenessStep != LivenessStep.completed)
+              // Action button at bottom
+              if (!_isProcessing && _isInitialized && !_hasError)
                 Positioned(
                   bottom: 40,
-                  left: 20,
-                  right: 20,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.6),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: const Text(
-                      'Ikuti instruksi untuk verifikasi liveness',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    child: _currentStep == LoginStep.readyToCapture
+                        ? ElevatedButton(
+                            onPressed: _processLogin,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(30),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 48,
+                                vertical: 16,
+                              ),
+                              elevation: 8,
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.check_circle, size: 24),
+                                SizedBox(width: 12),
+                                Text(
+                                  'Login Sekarang',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 24,
+                              vertical: 12,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.6),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: const Text(
+                              'Posisikan wajah Anda di tengah frame',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
                   ),
                 ),
             ],

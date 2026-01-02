@@ -3,6 +3,7 @@ import 'package:camera/camera.dart';
 import 'dart:io';
 import 'dart:ui';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
+import 'package:image/image.dart' as img;
 import '../models/user.dart';
 import '../services/face_detection_service.dart';
 import '../services/face_recognition_service.dart';
@@ -761,23 +762,129 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
       print('[FACE_REG] Starting upload for user: ${widget.user.id}');
       print('[FACE_REG] Number of images: ${_capturedImages.length}');
 
+      // NEW: Generate embeddings with quality checks on mobile
+      final embeddings = <Map<String, dynamic>>[];
+
+      for (int i = 0; i < _capturedImages.length; i++) {
+        if (mounted) {
+          setState(() {
+            _uploadProgress =
+                ((i / _capturedImages.length) * 50).round(); // 0-50%
+            _statusMessage =
+                'Memproses foto ${i + 1}/${_capturedImages.length}...';
+          });
+        }
+
+        try {
+          // Read and decode image
+          final imageBytes = await _capturedImages[i].readAsBytes();
+          final decodedImage = img.decodeImage(imageBytes);
+
+          if (decodedImage == null) {
+            print('[FACE_REG] Failed to decode image $i');
+            continue;
+          }
+
+          // Detect face
+          final faces = await _faceDetectionService
+              .detectFacesFromFile(_capturedImages[i]);
+
+          if (faces.isEmpty) {
+            print('[FACE_REG] No face detected in image $i');
+            continue;
+          }
+
+          final face = faces.first;
+
+          // Extract face region
+          final boundingBox = face.boundingBox;
+          final padding = 40.0;
+          final left = (boundingBox.left - padding)
+              .clamp(0, decodedImage.width - 1)
+              .toInt();
+          final top = (boundingBox.top - padding)
+              .clamp(0, decodedImage.height - 1)
+              .toInt();
+          final right = (boundingBox.right + padding)
+              .clamp(0, decodedImage.width)
+              .toInt();
+          final bottom = (boundingBox.bottom + padding)
+              .clamp(0, decodedImage.height)
+              .toInt();
+
+          final faceImage = img.copyCrop(
+            decodedImage,
+            x: left,
+            y: top,
+            width: right - left,
+            height: bottom - top,
+          );
+
+          // Generate embedding with quality checks
+          final result =
+              await _faceRecognitionService.generateEmbeddingWithQuality(
+            faceImage,
+            face,
+          );
+
+          if (result['success'] == true) {
+            embeddings.add({
+              'embedding': result['embedding'],
+              'quality': result['qualityScore'] ?? 0.0,
+              'metrics': result['metrics'],
+            });
+            print(
+                '[FACE_REG] ✅ Embedding ${i + 1} generated, quality: ${result['qualityScore']}%');
+          } else {
+            print(
+                '[FACE_REG] ⚠️ Image $i failed quality check: ${result['message']}');
+          }
+        } catch (e) {
+          print('[FACE_REG] Error processing image $i: $e');
+        }
+      }
+
+      if (embeddings.isEmpty) {
+        throw Exception(
+            'Tidak ada foto yang memenuhi standar kualitas. Silakan coba lagi.');
+      }
+
+      print('[FACE_REG] Generated ${embeddings.length} embeddings');
+
+      // Sort by quality and keep top embeddings
+      embeddings.sort(
+          (a, b) => (b['quality'] as double).compareTo(a['quality'] as double));
+      final topEmbeddings = embeddings.take(5).toList();
+
+      // Calculate average quality
+      final avgQuality = topEmbeddings
+              .map((e) => e['quality'] as double)
+              .reduce((a, b) => a + b) /
+          topEmbeddings.length;
+
+      print(
+          '[FACE_REG] Using top ${topEmbeddings.length} embeddings, avg quality: ${avgQuality.toStringAsFixed(1)}%');
+
+      // Send embeddings to backend using NEW endpoint
       if (mounted) {
         setState(() {
-          _statusMessage = 'Mengunggah...';
+          _uploadProgress = 75;
+          _statusMessage = 'Mengirim ke server...';
         });
       }
 
       final result = await _userService.registerFaceImages(
         userId: widget.user.id,
         images: _capturedImages,
-        embeddings: null,
+        embeddings:
+            topEmbeddings.map((e) => e['embedding'] as List<double>).toList(),
         onProgress: (current, total) {
           if (mounted) {
             setState(() {
-              _uploadProgress = ((current / total) * 100).round();
+              _uploadProgress =
+                  75 + ((current / total) * 25).round(); // 75-100%
             });
           }
-          print('[FACE_REG] Upload progress: $current/$total');
         },
       );
 
@@ -786,10 +893,11 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Foto wajah berhasil didaftarkan!'),
+        SnackBar(
+          content: Text(
+              'Foto wajah berhasil didaftarkan!\nKualitas: ${avgQuality.toStringAsFixed(0)}%'),
           backgroundColor: Colors.green,
-          duration: Duration(seconds: 2),
+          duration: Duration(seconds: 3),
         ),
       );
 
@@ -808,7 +916,7 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
         SnackBar(
           content: Text('Error upload: $e'),
           backgroundColor: Colors.red,
-          duration: Duration(seconds: 3),
+          duration: Duration(seconds: 4),
         ),
       );
     }

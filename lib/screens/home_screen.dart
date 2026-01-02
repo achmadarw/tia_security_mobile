@@ -648,36 +648,72 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       ..._shifts.map((shift) {
                         List<Widget> badges = [];
 
-                        // Late badge
+                        // Late badge with enhanced formatting
                         if (shift['isLate'] == true) {
+                          final lateMinutes = shift['lateMinutes'] ?? 0;
+
+                          // Determine severity and format
+                          String lateText;
+                          Color badgeColor;
+                          IconData icon;
+
+                          if (lateMinutes < 15) {
+                            // Small late: minutes only
+                            lateText = 'TELAT ${lateMinutes}m';
+                            badgeColor = Colors.orange.shade600;
+                            icon = Icons.watch_later;
+                          } else if (lateMinutes < 60) {
+                            // Medium late: minutes only
+                            lateText = 'TELAT ${lateMinutes}m';
+                            badgeColor = Colors.deepOrange.shade700;
+                            icon = Icons.warning_amber_rounded;
+                          } else {
+                            // Large late: hours + minutes format
+                            final hours = lateMinutes ~/ 60;
+                            final minutes = lateMinutes % 60;
+                            lateText = 'TELAT ${hours}j ${minutes}m';
+                            badgeColor = Colors.red.shade800;
+                            icon = Icons.error_outline;
+                          }
+
                           badges.add(
                             Container(
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 6),
+                                  horizontal: 12, vertical: 8),
                               decoration: BoxDecoration(
-                                color: isDark
-                                    ? Colors.red.shade900.withOpacity(0.4)
-                                    : Colors.red.shade700.withOpacity(0.9),
-                                borderRadius: BorderRadius.circular(8),
+                                gradient: LinearGradient(
+                                  colors: [
+                                    badgeColor,
+                                    badgeColor.withOpacity(0.85),
+                                  ],
+                                ),
+                                borderRadius: BorderRadius.circular(10),
                                 border: Border.all(
                                   color: isDark
-                                      ? Colors.red.shade700
-                                      : Colors.red.shade900,
-                                  width: 1,
+                                      ? badgeColor.withOpacity(0.6)
+                                      : badgeColor,
+                                  width: 1.5,
                                 ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: badgeColor.withOpacity(0.3),
+                                    blurRadius: 6,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(Icons.warning_amber_rounded,
-                                      color: Colors.white, size: 14),
-                                  const SizedBox(width: 4),
+                                  Icon(icon, color: Colors.white, size: 15),
+                                  const SizedBox(width: 6),
                                   Text(
-                                    'TELAT ${shift['lateMinutes']}m',
+                                    lateText,
                                     style: const TextStyle(
                                       color: Colors.white,
-                                      fontSize: 11,
+                                      fontSize: 12,
                                       fontWeight: FontWeight.bold,
+                                      letterSpacing: 0.3,
                                     ),
                                   ),
                                 ],

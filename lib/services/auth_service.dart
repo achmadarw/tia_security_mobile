@@ -91,6 +91,11 @@ class AuthService {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('access_token', _accessToken!);
         await prefs.setString('refresh_token', _refreshToken!);
+        await prefs.setString(
+            'user_data', jsonEncode(data['user'])); // Save user data
+
+        print(
+            '[AUTH_SERVICE] Face login successful - User: ${_currentUser?.name} (ID: ${_currentUser?.id})');
 
         return {
           'success': true,
@@ -101,10 +106,12 @@ class AuthService {
       } else {
         try {
           final error = jsonDecode(response.body);
-          final errorMsg = error['error'] ?? 'Wajah tidak dikenali';
+          final errorMsg =
+              error['message'] ?? error['error'] ?? 'Wajah tidak dikenali';
+          print('[AUTH_SERVICE] Face login failed: $errorMsg');
           return {
             'success': false,
-            'error': ErrorHandler.getFaceRecognitionError(errorMsg)
+            'error': errorMsg, // Use the detailed message from backend
           };
         } catch (e) {
           return {

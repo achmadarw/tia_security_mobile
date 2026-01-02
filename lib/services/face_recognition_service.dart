@@ -5,7 +5,10 @@ import 'package:tflite_flutter/tflite_flutter.dart';
 import 'package:image/image.dart' as img;
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import '../config/api_config.dart';
+import 'face_alignment_service.dart';
+import 'image_quality_validator.dart';
 
 /// Service untuk face recognition menggunakan TensorFlow Lite
 /// Generate face embedding (192D) dan kirim ke backend untuk matching
@@ -24,6 +27,10 @@ class FaceRecognitionService {
   Interpreter? _interpreter;
   bool _isInitialized = false;
   bool _isInitializing = false;
+
+  // Services for alignment and quality checks
+  final _alignmentService = FaceAlignmentService();
+  final _qualityValidator = ImageQualityValidator();
 
   // Model input/output specs for MobileFaceNet
   static const int inputSize = 112; // 112x112 for MobileFaceNet
@@ -140,6 +147,88 @@ class FaceRecognitionService {
       print('[FaceRecognition] Error generating embedding: $e');
       rethrow;
     }
+  }
+
+  /// Generate embedding with quality checks and alignment (RECOMMENDED)
+  ///
+  /// This is the new recommended method for generating embeddings.
+  /// It includes:
+  /// - Image quality validation
+  /// - Face alignment
+  /// - Consistent preprocessing
+  ///
+  /// Use this for BOTH registration and login to ensure consistency.
+  ///
+  /// [isStrictMode] = true untuk registration, false untuk login
+  Future<Map<String, dynamic>> generateEmbeddingWithQuality(
+    img.Image faceImage,
+    Face face, {
+    bool isStrictMode = true, // Default strict untuk registration
+  }) async {
+    try {
+      print(
+          '[FaceRecognition] Starting quality-checked embedding generation (strict: $isStrictMode)');
+
+      // 1. Validate image quality
+      final qualityResult = await _qualityValidator
+          .validateImage(faceImage, face, isStrictMode: isStrictMode);
+
+      if (!qualityResult.isValid) {
+        return {
+          'success': false,
+          'error': 'QUALITY_CHECK_FAILED',
+          'message': qualityResult.getFailureMessage(),
+          'checks': qualityResult.checks,
+          'metrics': qualityResult.metrics,
+        };
+      }
+
+      print('[FaceRecognition] ✅ Quality check passed');
+
+      // 2. Align face
+      final alignedFace = await _alignmentService.alignFace(faceImage, face);
+      if (alignedFace == null) {
+        return {
+          'success': false,
+          'error': 'ALIGNMENT_FAILED',
+          'message': 'Gagal melakukan alignment wajah',
+        };
+      }
+
+      print('[FaceRecognition] ✅ Face alignment completed');
+
+      // 3. Generate embedding
+      final embedding = await generateEmbedding(alignedFace);
+
+      return {
+        'success': true,
+        'embedding': embedding,
+        'qualityScore':
+            await _qualityValidator.getQualityScore(faceImage, face),
+        'metrics': qualityResult.metrics,
+      };
+    } catch (e, stackTrace) {
+      print('[FaceRecognition] ❌ Error in quality-checked embedding: $e');
+      print(stackTrace);
+      return {
+        'success': false,
+        'error': 'EMBEDDING_GENERATION_FAILED',
+        'message': 'Gagal generate embedding: $e',
+      };
+    }
+  }
+
+  /// Validate image quality only (for real-time feedback)
+  Future<ValidationResult> validateImageQuality(
+    img.Image faceImage,
+    Face? face,
+  ) async {
+    return await _qualityValidator.validateImage(faceImage, face);
+  }
+
+  /// Get quality score (0-100) for real-time indicator
+  Future<double> getImageQualityScore(img.Image faceImage, Face? face) async {
+    return await _qualityValidator.getQualityScore(faceImage, face);
   }
 
   /// Generate embedding from file path
