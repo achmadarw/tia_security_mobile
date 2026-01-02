@@ -12,6 +12,7 @@ import '../../services/auth_service.dart';
 import '../../services/user_service.dart';
 import '../../services/roster_assignment_service.dart';
 import '../../services/pdf_service.dart';
+import '../../utils/color_utils.dart';
 import 'package:open_file/open_file.dart';
 
 class RosterManagementScreen extends StatefulWidget {
@@ -1543,35 +1544,36 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
           ),
         ),
         child: Center(
-          child: !isOff
-              ? Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: shift.colorValue.withOpacity(hasActualAssignment
-                        ? 0.15
-                        : 0.08), // Lighter if pattern
-                    borderRadius: BorderRadius.circular(8),
-                    border: hasActualAssignment
-                        ? null
-                        : Border.all(
-                            color: shift.colorValue.withOpacity(0.3),
-                            width: 1,
-                            style: BorderStyle.solid,
-                          ),
-                  ),
-                  child: Text(
-                    shift.code ??
-                        shift.name
-                            .split(' ')
-                            .last, // Use code (e.g., "1", "2", "3"), fallback to name
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: shift.colorValue,
+          child: !isOff && shift != null
+              ? () {
+                  // Generate color variants from shift color (same as PDF/portal)
+                  final shiftData = shift!; // Assert non-null after check
+                  final colors =
+                      ColorUtils.getShiftColorVariants(shiftData.color);
+                  return Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: colors.bg,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: colors.border,
+                        width: 2,
+                      ),
                     ),
-                  ),
-                )
+                    child: Text(
+                      shiftData.code ??
+                          shiftData.name
+                              .split(' ')
+                              .last, // Use code (e.g., "1", "2", "3"), fallback to name
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: colors.text,
+                      ),
+                    ),
+                  );
+                }()
               : Icon(
                   Icons.event_busy_rounded, // Pertahankan icon untuk OFF
                   size: 24,
