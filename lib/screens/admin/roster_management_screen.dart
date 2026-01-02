@@ -57,7 +57,6 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
   List<Shift> _shifts = [];
   List<User> _users = [];
   Map<String, List<ShiftAssignment>> _assignments = {}; // key: "YYYY-MM-DD"
-  Map<int, RosterPattern?> _userPatterns = {}; // key: userId, value: pattern
   List<UserWithPattern> _rosterData =
       []; // Calculated roster data dengan pattern
   bool _isLoading = true;
@@ -229,7 +228,6 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
         _shifts = shifts;
         _users = users;
         _assignments = assignmentsByDate;
-        _userPatterns = userPatterns;
         _rosterData = rosterData;
         _isLoading = false;
       });
@@ -1753,7 +1751,7 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
           ),
         ),
         child: Center(
-          child: !isOff && shift != null
+          child: !isOff
               ? Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -1804,15 +1802,13 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
 
     // Determine shift details
     Shift? shift;
-    String shiftStatus = '';
 
     if (hasAssignment) {
       // Has actual assignment in database
       try {
         shift = _shifts.firstWhere((s) => s.id == currentAssignment.shiftId);
-        shiftStatus = 'Assignment Aktual';
       } catch (e) {
-        shiftStatus = 'Shift tidak ditemukan';
+        // Shift not found
       }
     } else {
       // Check from pattern
@@ -1821,9 +1817,6 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
         orElse: () => _rosterData.first,
       );
 
-      final lastDay =
-          DateTime(_selectedMonth.year, _selectedMonth.month + 1, 0);
-      final daysInMonth = lastDay.day;
       final dayIndex = date.day - 1;
 
       if (dayIndex < userWithPattern.calculatedShifts.length) {
@@ -1831,12 +1824,9 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
         if (calculatedShiftId > 0) {
           try {
             shift = _shifts.firstWhere((s) => s.id == calculatedShiftId);
-            shiftStatus = 'Dari Pattern';
           } catch (e) {
-            shiftStatus = 'Pattern shift tidak ditemukan';
+            // Pattern shift not found
           }
-        } else {
-          shiftStatus = 'OFF (Libur)';
         }
       }
     }
@@ -2249,8 +2239,10 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
     // State variables
     List<User> selectedUsers = [];
     bool isLoadingPatterns = false;
+    // ignore: unused_local_variable
     List<RosterPattern> availablePatterns = [];
     RosterPattern? selectedPattern;
+    // ignore: unused_local_variable
     String? patternLoadError;
 
     // Load available patterns from API
@@ -2290,6 +2282,7 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) {
           // Determine pattern based on selected users count
+          // ignore: unused_local_variable
           final userCount = selectedUsers.length;
 
           return AlertDialog(
@@ -2750,14 +2743,60 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
         return DateFormat('E').format(date).substring(0, 1).toUpperCase();
       });
 
-      // Prepare users data
-      final usersData = _rosterData.map((userWithPattern) {
+      // Filter only security users and apply sorting (same as grid view)
+      var securityRosterData = _rosterData
+          .where((userWithPattern) => userWithPattern.user.role == 'security')
+          .toList();
+
+      // Apply sorting based on selected method (same as grid view)
+      if (_gridSortMethod == 'first') {
+        // Sort by first OFF day NUMBER (1, 2, 3, ...)
+        securityRosterData
+            .sort((a, b) => a.firstOffDay.compareTo(b.firstOffDay));
+      } else if (_gridSortMethod == 'last') {
+        // Sort by day of WEEK descending (Sunday=7, Saturday=6, ..., Monday=1)
+        securityRosterData
+            .sort((a, b) => b.offDayOfWeek.compareTo(a.offDayOfWeek));
+      }
+
+      // Prepare users data (match portal format)
+      final usersData = securityRosterData.map((userWithPattern) {
         final user = userWithPattern.user;
-        final shifts = userWithPattern.calculatedShifts;
+        final calculatedShifts = userWithPattern.calculatedShifts;
+
+        // Convert shift IDs to format expected by backend
+        final shiftsArray = <Map<String, dynamic>>[];
+        for (int day = 1; day <= daysInMonth; day++) {
+          final shiftId = calculatedShifts[day - 1]; // 0-indexed
+
+          if (shiftId == 0) {
+            // OFF day
+            shiftsArray.add({
+              'day': day,
+              'shiftCode': 'O',
+              'isOff': true,
+            });
+          } else {
+            // Find shift to get code
+            Shift? shift;
+            try {
+              shift = _shifts.firstWhere((s) => s.id == shiftId);
+            } catch (e) {
+              // Shift not found
+            }
+
+            final shiftCode = shift?.code ?? shift?.name ?? '?';
+            shiftsArray.add({
+              'day': day,
+              'shiftCode': shiftCode,
+              'isOff': false,
+            });
+          }
+        }
 
         return {
-          'name': user.name,
-          'shifts': shifts,
+          'name': user.name.toUpperCase(),
+          'shifts': shiftsArray,
         };
       }).toList();
 
@@ -2765,6 +2804,13 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
       print('   Month: $monthName');
       print('   Days: $daysInMonth');
       print('   Users: ${usersData.length}');
+
+      // DEBUG: Print sample user data
+      if (usersData.isNotEmpty) {
+        print('   Sample user: ${usersData[0]['name']}');
+        final sampleShifts = (usersData[0]['shifts'] as List).take(7).toList();
+        print('   Sample shifts (first 7 days): $sampleShifts');
+      }
 
       // Call PDF service
       final pdfBytes = await _pdfService.exportRosterPdf(
