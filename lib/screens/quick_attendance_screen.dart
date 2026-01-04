@@ -72,22 +72,14 @@ class _QuickAttendanceScreenState extends State<QuickAttendanceScreen> {
       if (response != null) {
         // Response is direct from backend (no 'success' or 'data' wrapper)
         final assignments = response['assignments'] as List?;
-        final isCheckedIn = response['isCheckedIn'] == true;
 
-        print('[QUICK_ATTENDANCE] Fetched status - isCheckedIn: $isCheckedIn');
+        print('[QUICK_ATTENDANCE] Fetched assignment data');
 
         setState(() {
           _todayAssignment =
               assignments?.isNotEmpty == true ? assignments!.first : null;
           _isLoadingAssignment = false;
-          _needsCheckoutConfirmation = isCheckedIn;
         });
-
-        // Show confirmation dialog if already checked in
-        if (isCheckedIn && mounted) {
-          print('[QUICK_ATTENDANCE] Showing checkout confirmation dialog');
-          _showCheckoutConfirmationDialog();
-        }
       } else {
         setState(() {
           _isLoadingAssignment = false;
@@ -120,11 +112,8 @@ class _QuickAttendanceScreenState extends State<QuickAttendanceScreen> {
       print('[QUICK_ATTENDANCE] Location permission error: $e');
     }
 
-    // Only initialize camera if no checkout confirmation is needed
-    // If confirmation needed, camera will be initialized after user confirms
-    if (!_needsCheckoutConfirmation) {
-      await _initializeServices();
-    }
+    // Always initialize camera (confirmation already done in home screen)
+    await _initializeServices();
   }
 
   Future<void> _initializeServices() async {

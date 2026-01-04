@@ -1331,6 +1331,68 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
     final actions = [
       _ActionData('Absensi', Icons.face_outlined, AppColors.primary, () async {
+        // Fetch fresh data to check current status
+        final data = await widget.authService.getTodayAttendance();
+        final isCheckedIn = data?['isCheckedIn'] == true;
+
+        print('[HOME] Button tap - isCheckedIn: $isCheckedIn');
+
+        // Check if already checked in BEFORE navigating
+        if (isCheckedIn) {
+          // Show confirmation dialog in home screen
+          final confirmed = await showDialog<bool>(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => AlertDialog(
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
+              title: Row(
+                children: [
+                  const Icon(Icons.logout, color: Colors.blue, size: 32),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      'Konfirmasi Check-Out',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              content: const Text(
+                'Anda sudah check-in hari ini.\n\nApakah Anda ingin melakukan check-out sekarang?',
+                style: TextStyle(fontSize: 16),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child:
+                      const Text('Batal', style: TextStyle(color: Colors.grey)),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('Ya, Check-Out'),
+                ),
+              ],
+            ),
+          );
+
+          // If cancelled, don't proceed
+          if (confirmed != true) {
+            print('[HOME] User cancelled checkout');
+            return;
+          }
+
+          print('[HOME] User confirmed checkout');
+        }
+
+        // Proceed to quick attendance screen
         final result = await Navigator.push(
           context,
           MaterialPageRoute(
@@ -1690,6 +1752,68 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         elevation: 0,
         backgroundColor: Colors.transparent,
         onPressed: () async {
+          // Fetch fresh data to check current status
+          final data = await widget.authService.getTodayAttendance();
+          final isCheckedIn = data?['isCheckedIn'] == true;
+
+          print('[HOME] FAB tap - isCheckedIn: $isCheckedIn');
+
+          // Check if already checked in BEFORE navigating
+          if (isCheckedIn) {
+            // Show confirmation dialog
+            final confirmed = await showDialog<bool>(
+              context: context,
+              barrierDismissible: false,
+              builder: (context) => AlertDialog(
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16)),
+                title: Row(
+                  children: [
+                    const Icon(Icons.logout, color: Colors.blue, size: 32),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        'Konfirmasi Check-Out',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                content: const Text(
+                  'Anda sudah check-in hari ini.\n\nApakah Anda ingin melakukan check-out sekarang?',
+                  style: TextStyle(fontSize: 16),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Batal',
+                        style: TextStyle(color: Colors.grey)),
+                  ),
+                  ElevatedButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      foregroundColor: Colors.white,
+                    ),
+                    child: const Text('Ya, Check-Out'),
+                  ),
+                ],
+              ),
+            );
+
+            // If cancelled, don't proceed
+            if (confirmed != true) {
+              print('[HOME] FAB - User cancelled checkout');
+              return;
+            }
+
+            print('[HOME] FAB - User confirmed checkout');
+          }
+
+          // Proceed to quick attendance screen
           final result = await Navigator.push(
             context,
             MaterialPageRoute(
