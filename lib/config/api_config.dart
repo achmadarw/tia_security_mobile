@@ -15,6 +15,7 @@ class ApiConfig {
   static const String faceImages = '/face/images';
 
   // Attendance endpoints
+  static const String attendanceWithFace = '/attendance/with-face';
   static const String attendanceCheckIn = '/attendance/check-in';
   static const String attendanceCheckOut = '/attendance/check-out';
   static const String attendanceToday = '/attendance/today';

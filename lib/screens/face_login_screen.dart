@@ -258,6 +258,38 @@ class _FaceLoginScreenState extends State<FaceLoginScreen> {
       print(
           '[FACE_LOGIN] Face extracted: ${faceImage.width}x${faceImage.height}');
 
+      // DEBUG: Log face detection details
+      print('[FACE_LOGIN] === Face Detection Debug ===');
+      print(
+          '[FACE_LOGIN] Face bounding box: ${face.boundingBox.left.toInt()},${face.boundingBox.top.toInt()} ${face.boundingBox.width.toInt()}x${face.boundingBox.height.toInt()}');
+      print(
+          '[FACE_LOGIN] Head angles: Y=${face.headEulerAngleY?.toStringAsFixed(2)}°, Z=${face.headEulerAngleZ?.toStringAsFixed(2)}°');
+
+      final leftEye = face.landmarks[FaceLandmarkType.leftEye];
+      final rightEye = face.landmarks[FaceLandmarkType.rightEye];
+      if (leftEye != null && rightEye != null) {
+        print(
+            '[FACE_LOGIN] Left eye: (${leftEye.position.x.toInt()}, ${leftEye.position.y.toInt()})');
+        print(
+            '[FACE_LOGIN] Right eye: (${rightEye.position.x.toInt()}, ${rightEye.position.y.toInt()})');
+
+        // Calculate eye angle
+        final deltaY = rightEye.position.y - leftEye.position.y;
+        final deltaX = rightEye.position.x - leftEye.position.x;
+        final angleRad = atan2(deltaY, deltaX);
+        final angleDeg = angleRad * 180 / pi;
+        print(
+            '[FACE_LOGIN] Eye rotation angle: ${angleDeg.toStringAsFixed(2)}°');
+      } else {
+        print('[FACE_LOGIN] Eye landmarks NOT detected!');
+      }
+
+      print(
+          '[FACE_LOGIN] Left eye open: ${face.leftEyeOpenProbability?.toStringAsFixed(2)}');
+      print(
+          '[FACE_LOGIN] Right eye open: ${face.rightEyeOpenProbability?.toStringAsFixed(2)}');
+      print('[FACE_LOGIN] === End Debug ===');
+
       // Generate embedding with quality checks
       if (!mounted) return;
 

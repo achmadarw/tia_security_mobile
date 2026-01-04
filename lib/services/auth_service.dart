@@ -182,6 +182,81 @@ class AuthService {
     await prefs.remove('refresh_token');
   }
 
+  // Submit attendance with face validation
+  Future<Map<String, dynamic>> submitAttendanceWithFace(
+    List<double> embedding,
+    String type, {
+    double? latitude,
+    double? longitude,
+  }) async {
+    try {
+      if (_accessToken == null) {
+        return {
+          'success': false,
+          'error': 'Not authenticated. Please login first.'
+        };
+      }
+
+      print('[AUTH_SERVICE] Submitting attendance: type=$type');
+
+      final response = await http
+          .post(
+            Uri.parse('${ApiConfig.baseUrl}${ApiConfig.attendanceWithFace}'),
+            headers: {
+              'Authorization': 'Bearer $_accessToken',
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode({
+              'embedding': embedding,
+              'type': type,
+              'latitude': latitude,
+              'longitude': longitude,
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      print('[AUTH_SERVICE] Attendance response: ${response.statusCode}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(response.body);
+        print('[AUTH_SERVICE] Attendance submitted successfully');
+        return {
+          'success': true,
+          'data': data,
+          'confidence': data['confidence'],
+          'requiresReverification': data['requiresReverification'] ?? false,
+        };
+      } else if (response.statusCode == 401) {
+        final error = jsonDecode(response.body);
+        print('[AUTH_SERVICE] Attendance rejected (401): ${error['error']}');
+        print('[AUTH_SERVICE] Error details: ${response.body}');
+        return {
+          'success': false,
+          'error': error['error'] ?? 'Face not recognized',
+          'message': error['message'],
+          'confidence': error['confidence'],
+          'requiresReverification': error['requiresReverification'] ?? false,
+          'reason': error['reason'],
+        };
+      } else {
+        final error = jsonDecode(response.body);
+        print(
+            '[AUTH_SERVICE] Attendance failed (${response.statusCode}): ${error['error']}');
+        return {
+          'success': false,
+          'error': error['error'] ?? error['message'] ?? 'Attendance failed'
+        };
+      }
+    } catch (e) {
+      print('[AUTH_SERVICE] Attendance error: $e');
+      ErrorHandler.logError('SUBMIT_ATTENDANCE', e);
+      return {
+        'success': false,
+        'error': ErrorHandler.getUserFriendlyMessage(e)
+      };
+    }
+  }
+
   // Get today's attendance
   Future<Map<String, dynamic>?> getTodayAttendance() async {
     if (_accessToken == null) return null;

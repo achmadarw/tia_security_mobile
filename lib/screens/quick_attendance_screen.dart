@@ -52,7 +52,7 @@ class _QuickAttendanceScreenState extends State<QuickAttendanceScreen> {
   bool _eyesWereOpen = false;
   List<File> _capturedImages = [];
   int _currentStep = 0;
-  final int _totalSteps = 2;
+  final int _totalSteps = 1; // Only blink detection, no head turn
 
   // Shift assignment
   Map<String, dynamic>? _todayAssignment;
@@ -200,150 +200,9 @@ class _QuickAttendanceScreenState extends State<QuickAttendanceScreen> {
       return;
     }
 
-    final face = faces.first;
-
-    switch (_currentLivenessStep) {
-      case LivenessStep.initial:
-        _currentLivenessStep = LivenessStep.blinkFirst;
-        _statusMessage = 'Kedipkan mata Anda';
-        _statusColor = Colors.blue;
-        break;
-
-      case LivenessStep.blinkFirst:
-        _detectBlink(face, isFirstBlink: true);
-        break;
-
-      case LivenessStep.blinkSecond:
-        _detectBlink(face, isFirstBlink: false);
-        break;
-
-      case LivenessStep.turnLeft:
-        _detectHeadTurn(face, isLeft: true);
-        break;
-
-      case LivenessStep.turnRight:
-        _detectHeadTurn(face, isLeft: false);
-        break;
-
-      case LivenessStep.completed:
-        break;
-    }
-  }
-
-  void _detectBlink(Face face, {required bool isFirstBlink}) {
-    final leftEyeProb = face.leftEyeOpenProbability ?? 1.0;
-    final rightEyeProb = face.rightEyeOpenProbability ?? 1.0;
-
-    if (leftEyeProb > 0.7 && rightEyeProb > 0.7) {
-      if (!_eyesWereOpen) {
-        _eyesWereOpen = true;
-        _statusMessage =
-            isFirstBlink ? 'Kedipkan mata Anda' : 'Kedipkan sekali lagi';
-        _statusColor = Colors.blue;
-      }
-    }
-
-    if (_eyesWereOpen && leftEyeProb < 0.3 && rightEyeProb < 0.3) {
-      if (isFirstBlink) {
-        _currentLivenessStep = LivenessStep.blinkSecond;
-        _eyesWereOpen = false;
-        _statusMessage = 'Bagus! Kedipkan sekali lagi';
-        _statusColor = Colors.green;
-      } else {
-        _eyesWereOpen = false;
-        _waitForEyesOpenThenCapture();
-      }
-    }
-  }
-
-  Future<void> _waitForEyesOpenThenCapture() async {
-    await Future.delayed(const Duration(milliseconds: 500));
-
-    if (!mounted) return;
-
-    if (_detectedFaces.isNotEmpty) {
-      final face = _detectedFaces.first;
-      final leftEyeProb = face.leftEyeOpenProbability ?? 0.0;
-      final rightEyeProb = face.rightEyeOpenProbability ?? 0.0;
-
-      if (leftEyeProb > 0.7 && rightEyeProb > 0.7) {
-        await _captureStep(restartStream: true);
-
-        if (!mounted) return;
-
-        setState(() {
-          _currentStep++;
-
-          _currentLivenessStep = Random().nextBool()
-              ? LivenessStep.turnLeft
-              : LivenessStep.turnRight;
-
-          _statusMessage = _currentLivenessStep == LivenessStep.turnLeft
-              ? 'Palingkan kepala ke KANAN'
-              : 'Palingkan kepala ke KIRI';
-          _statusColor = Colors.blue;
-        });
-      }
-    }
-  }
-
-  void _detectHeadTurn(Face face, {required bool isLeft}) {
-    final headYaw = face.headEulerAngleY ?? 0.0;
-
-    if (isLeft) {
-      if (headYaw < -20) {
-        _captureStepAndComplete();
-      } else if (headYaw < -10) {
-        _statusMessage = 'Palingkan lebih ke KANAN';
-        _statusColor = Colors.orange;
-      }
-    } else {
-      if (headYaw > 20) {
-        _captureStepAndComplete();
-      } else if (headYaw > 10) {
-        _statusMessage = 'Palingkan lebih ke KIRI';
-        _statusColor = Colors.orange;
-      }
-    }
-  }
-
-  Future<void> _captureStep({bool restartStream = true}) async {
-    try {
-      if (_cameraController != null &&
-          _cameraController!.value.isStreamingImages) {
-        await _cameraController!.stopImageStream();
-      }
-
-      final XFile imageFile = await _cameraController!.takePicture();
-      final File file = File(imageFile.path);
-      _capturedImages.add(file);
-
-      print(
-          '[QUICK_ATTENDANCE] Captured image ${_capturedImages.length}: ${file.path}');
-
-      if (restartStream) {
-        await Future.delayed(const Duration(milliseconds: 300));
-        _startFaceDetection();
-      }
-    } catch (e) {
-      print('[QUICK_ATTENDANCE] Capture error: $e');
-      if (mounted) {
-        _showError('Gagal mengambil foto. Silakan coba lagi.');
-      }
-    }
-  }
-
-  Future<void> _captureStepAndComplete() async {
-    await _captureStep(restartStream: false);
-
-    if (!mounted) return;
-
-    setState(() {
-      _currentStep++;
-      _currentLivenessStep = LivenessStep.completed;
-    });
-
-    await _processAttendance();
+    // Face detected - ready for capture
+    _statusMessage = 'Wajah terdeteksi! Tekan tombol untuk absen';
+    _statusColor = Colors.green;
   }
 
   Future<void> _processAttendance() async {
@@ -360,18 +219,21 @@ class _QuickAttendanceScreenState extends State<QuickAttendanceScreen> {
     });
 
     try {
+      // EXACT same flow as face_login: Stop stream before capture
       if (_cameraController != null &&
           _cameraController!.value.isStreamingImages) {
         await _cameraController!.stopImageStream();
       }
 
-      if (_capturedImages.isEmpty) {
-        _showError('Tidak ada foto yang berhasil diambil.');
-        return;
-      }
+      // Capture image NOW (same as face_login)
+      print('[QUICK_ATTENDANCE] Capturing image...');
+      final XFile imageFile = await _cameraController!.takePicture();
+      final File file = File(imageFile.path);
+      print('[QUICK_ATTENDANCE] Image captured: ${file.path}');
 
-      final file = _capturedImages.last;
+      print('[QUICK_ATTENDANCE] Detecting faces...');
       final faces = await _faceDetectionService.detectFacesFromFile(file);
+      print('[QUICK_ATTENDANCE] Faces detected: ${faces.length}');
 
       if (faces.isEmpty) {
         _showError('Wajah tidak terdeteksi. Silakan coba lagi.');
@@ -384,6 +246,8 @@ class _QuickAttendanceScreenState extends State<QuickAttendanceScreen> {
       }
 
       final face = faces.first;
+      print('[QUICK_ATTENDANCE] Extracting embedding...');
+
       final faceImage =
           await _faceDetectionService.extractFaceImage(file, face);
 
@@ -392,17 +256,71 @@ class _QuickAttendanceScreenState extends State<QuickAttendanceScreen> {
         return;
       }
 
+      print(
+          '[QUICK_ATTENDANCE] Face extracted: ${faceImage.width}x${faceImage.height}');
+
+      // DEBUG: Log face detection details
+      print('[QUICK_ATTENDANCE] === Face Detection Debug ===');
+      print(
+          '[QUICK_ATTENDANCE] Face bounding box: ${face.boundingBox.left.toInt()},${face.boundingBox.top.toInt()} ${face.boundingBox.width.toInt()}x${face.boundingBox.height.toInt()}');
+      print(
+          '[QUICK_ATTENDANCE] Head angles: Y=${face.headEulerAngleY?.toStringAsFixed(2)}°, Z=${face.headEulerAngleZ?.toStringAsFixed(2)}°');
+
+      final leftEye = face.landmarks[FaceLandmarkType.leftEye];
+      final rightEye = face.landmarks[FaceLandmarkType.rightEye];
+      if (leftEye != null && rightEye != null) {
+        print(
+            '[QUICK_ATTENDANCE] Left eye: (${leftEye.position.x.toInt()}, ${leftEye.position.y.toInt()})');
+        print(
+            '[QUICK_ATTENDANCE] Right eye: (${rightEye.position.x.toInt()}, ${rightEye.position.y.toInt()})');
+
+        final deltaY = rightEye.position.y - leftEye.position.y;
+        final deltaX = rightEye.position.x - leftEye.position.x;
+        final angleRad = atan2(deltaY, deltaX);
+        final angleDeg = angleRad * 180 / pi;
+        print(
+            '[QUICK_ATTENDANCE] Eye rotation angle: ${angleDeg.toStringAsFixed(2)}°');
+      }
+
+      print(
+          '[QUICK_ATTENDANCE] Left eye open: ${face.leftEyeOpenProbability?.toStringAsFixed(2)}');
+      print(
+          '[QUICK_ATTENDANCE] Right eye open: ${face.rightEyeOpenProbability?.toStringAsFixed(2)}');
+      print('[QUICK_ATTENDANCE] === End Debug ===');
+
       if (!mounted) return;
 
       setState(() {
-        _statusMessage = 'Mengenali wajah...';
+        _statusMessage = 'Memvalidasi kualitas foto...';
       });
 
+      print('[QUICK_ATTENDANCE] Generating embedding with quality checks...');
+
+      // EXACT same method as face_login
       List<double> embedding;
       try {
-        embedding = await _faceRecognitionService.generateEmbedding(faceImage);
+        final result =
+            await _faceRecognitionService.generateEmbeddingWithQuality(
+          faceImage,
+          face,
+          isStrictMode: false, // Same as face_login
+        );
+
+        embedding = result['embedding'];
+        final qualityScore = result['qualityScore'] ?? 0.0;
+
+        print(
+            '[QUICK_ATTENDANCE] ✅ Embedding generated: ${embedding.length} dimensions');
+        print('[QUICK_ATTENDANCE] Quality score: $qualityScore%');
+
+        if (!mounted) return;
+
+        setState(() {
+          _statusMessage = 'Mengenali wajah...';
+        });
       } catch (e) {
-        _showError('Gagal generate embedding.');
+        print('[QUICK_ATTENDANCE] Embedding generation error: $e');
+        _showError('Gagal generate embedding: $e');
         return;
       }
 
@@ -448,35 +366,129 @@ class _QuickAttendanceScreenState extends State<QuickAttendanceScreen> {
         // Continue without location - attendance will still work
       }
 
-      // Process attendance via backend
-      final result = await widget.authService.loginWithFace(
+      // Determine attendance type based on current status
+      String attendanceType = 'check_in';
+      try {
+        final todayData = await widget.authService.getTodayAttendance();
+        if (todayData != null && todayData['isCheckedIn'] == true) {
+          attendanceType = 'check_out';
+        }
+      } catch (e) {
+        print(
+            '[QUICK_ATTENDANCE] Error checking status, defaulting to check_in: $e');
+      }
+
+      print('[QUICK_ATTENDANCE] Submitting attendance: $attendanceType');
+
+      // Submit attendance to backend
+      final result = await widget.authService.submitAttendanceWithFace(
         embedding,
+        attendanceType,
         latitude: position?.latitude,
         longitude: position?.longitude,
       );
 
-      if (result['success']) {
-        final attendance = result['attendance'];
-        if (attendance != null) {
-          final type = attendance['type'];
-          final time = attendance['time'] ?? 'Now';
+      print('[QUICK_ATTENDANCE] Attendance result: ${result['success']}');
 
+      if (result['success']) {
+        final data = result['data'];
+        final confidence = result['confidence'] ?? 0.0;
+
+        if (result['requiresReverification'] == true) {
           _showSuccessDialog(
-            type == 'check_in' ? 'Clock In Berhasil!' : 'Clock Out Berhasil!',
-            'Waktu: $time\nKonfidence: ${(result['confidence']).toStringAsFixed(1)}%',
+            'Attendance Pending Review',
+            'Your attendance has been submitted for manual verification.\nConfidence: ${confidence.toStringAsFixed(1)}%',
           );
         } else {
+          final type = data['type'] ?? attendanceType;
+          final time = data['checkTime'] ?? DateTime.now().toString();
+
           _showSuccessDialog(
-            'Verifikasi Berhasil!',
-            'Confidence: ${(result['confidence']).toStringAsFixed(1)}%',
+            type == 'check_in' ? 'Check-in Berhasil!' : 'Check-out Berhasil!',
+            'Waktu: $time\nConfidence: ${confidence.toStringAsFixed(1)}%',
           );
         }
       } else {
-        _showError(result['error'] ?? 'Wajah tidak dikenali');
+        if (result['requiresReverification'] == true) {
+          _showError(
+              'Absensi menunggu verifikasi: ${_translateErrorReason(result['reason'])}');
+        } else {
+          String errorMsg = _translateAttendanceError(result['error']) ??
+              'Wajah tidak dikenali';
+
+          // Add confidence info if available
+          if (result['confidence'] != null) {
+            final confidence = result['confidence'];
+            errorMsg +=
+                '\n\nTingkat kepercayaan: ${confidence.toStringAsFixed(1)}%';
+          }
+
+          _showError(errorMsg);
+        }
       }
     } catch (e, stackTrace) {
       ErrorHandler.logError('QUICK_ATTENDANCE', e, stackTrace: stackTrace);
       _showError(ErrorHandler.getUserFriendlyMessage(e));
+    }
+  }
+
+  // Translate attendance error codes to Indonesian
+  String _translateAttendanceError(String? error) {
+    if (error == null) return 'Wajah tidak dikenali';
+
+    final errorUpper = error.toUpperCase();
+
+    // Check for specific error codes
+    if (errorUpper.contains('CONFIDENCE_TOO_LOW') ||
+        errorUpper.contains('CONFIDENCE TOO LOW') ||
+        errorUpper == 'CONFIDENCE_TOO_LOW') {
+      return 'Silakan coba lagi dengan pencahayaan lebih baik dan posisi wajah lebih jelas.';
+    }
+
+    if (errorUpper.contains('INSUFFICIENT_MARGIN') ||
+        errorUpper.contains('MARGIN')) {
+      return 'Wajah terlalu mirip dengan pengguna lain.\nSilakan coba lagi dengan pencahayaan lebih baik.';
+    }
+
+    if (errorUpper.contains('NO_MATCH') ||
+        errorUpper.contains('NOT_RECOGNIZED')) {
+      return 'Wajah tidak dikenali.\nPastikan Anda sudah terdaftar dan pencahayaan cukup.';
+    }
+
+    if (errorUpper.contains('QUALITY')) {
+      return 'Kualitas gambar tidak memenuhi syarat.\nSilakan coba lagi dengan pencahayaan lebih baik.';
+    }
+
+    if (errorUpper.contains('NO REGISTERED FACE') ||
+        errorUpper.contains('NO_EMBEDDINGS')) {
+      return 'Anda belum mendaftarkan wajah.\nSilakan daftar wajah terlebih dahulu.';
+    }
+
+    if (errorUpper.contains('MULTIPLE_FACES')) {
+      return 'Terdeteksi lebih dari satu wajah.\nPastikan hanya wajah Anda yang terlihat.';
+    }
+
+    // Return original error if no translation found
+    return error;
+  }
+
+  // Translate error reason to Indonesian
+  String _translateErrorReason(String? reason) {
+    if (reason == null) return 'Confidence rendah';
+
+    switch (reason.toLowerCase()) {
+      case 'low_confidence':
+        return 'Confidence rendah';
+      case 'multiple_matches':
+        return 'Terlalu mirip dengan pengguna lain';
+      case 'anomaly_detected':
+        return 'Terdeteksi anomali';
+      case 'manual_request':
+        return 'Permintaan manual';
+      case 'quality_poor':
+        return 'Kualitas gambar buruk';
+      default:
+        return reason;
     }
   }
 
@@ -802,31 +814,50 @@ class _QuickAttendanceScreenState extends State<QuickAttendanceScreen> {
                   ),
                 ),
 
-              // Info text at bottom
-              if (!_isProcessing &&
-                  _isInitialized &&
-                  !_hasError &&
-                  _currentLivenessStep != LivenessStep.completed)
+              // Capture button - SAME as face_login
+              if (!_isProcessing && _isInitialized && !_hasError)
                 Positioned(
                   bottom: 40,
-                  left: 20,
-                  right: 20,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.6),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: const Text(
-                      'Ikuti instruksi untuk verifikasi liveness',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    child: ElevatedButton(
+                      onPressed:
+                          _detectedFaces.isNotEmpty ? _processAttendance : null,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _detectedFaces.isNotEmpty
+                            ? Colors.green
+                            : Colors.grey,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 50,
+                          vertical: 15,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(30),
+                        ),
+                        elevation: 8,
                       ),
-                      textAlign: TextAlign.center,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            _detectedFaces.isNotEmpty
+                                ? Icons.camera_alt
+                                : Icons.camera_alt_outlined,
+                            color: Colors.white,
+                            size: 28,
+                          ),
+                          const SizedBox(width: 12),
+                          const Text(
+                            'ABSEN SEKARANG',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
