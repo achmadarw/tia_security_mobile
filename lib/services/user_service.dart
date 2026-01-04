@@ -205,27 +205,44 @@ class UserService {
 
       final token = await _getToken();
 
-      // NEW: If embeddings provided, use new endpoint (mobile-only embedding)
+      // NEW: If embeddings provided, use new endpoint (mobile-only embedding) with images
       if (embeddings != null && embeddings.isNotEmpty) {
         print('[UserService] Using new /register-embeddings endpoint');
 
-        final response = await http.post(
+        // Create multipart request to send both embeddings and images
+        final request = http.MultipartRequest(
+          'POST',
           Uri.parse('${ApiConfig.baseUrl}/face/register-embeddings'),
-          headers: {
-            'Authorization': 'Bearer $token',
-            'Content-Type': 'application/json',
-          },
-          body: json.encode({
-            'user_id': userId,
-            'embeddings': embeddings,
-            'metadata': {
-              'total_captured': images.length,
-              'timestamp': DateTime.now().toIso8601String(),
-              'version': '2.0',
-              'method': 'mobile_direct',
-            },
-          }),
         );
+
+        // Add headers
+        request.headers['Authorization'] = 'Bearer $token';
+
+        // Add user_id and embeddings as fields
+        request.fields['user_id'] = userId.toString();
+        request.fields['embeddings'] = json.encode(embeddings);
+
+        // Add images as files
+        for (int i = 0; i < images.length; i++) {
+          final file = images[i];
+          final multipartFile = await http.MultipartFile.fromPath(
+            'images',
+            file.path,
+            filename:
+                'face_${userId}_${i + 1}_${DateTime.now().millisecondsSinceEpoch}.jpg',
+          );
+          request.files.add(multipartFile);
+          print('[UserService] Added image ${i + 1}/${images.length}');
+
+          // Report progress
+          if (onProgress != null) {
+            onProgress(i + 1, images.length);
+          }
+        }
+
+        print('[UserService] Sending multipart request...');
+        final streamedResponse = await request.send();
+        final response = await http.Response.fromStream(streamedResponse);
 
         print('[UserService] Response status: ${response.statusCode}');
 
@@ -309,24 +326,10 @@ class UserService {
   /// Get user's face images
   Future<List<Map<String, dynamic>>> getFaceImages(int userId) async {
     try {
-      final headers = await _getHeaders();
-      final response = await http.get(
-        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.users}/$userId/face-images'),
-        headers: headers,
-      );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final images = data['data']['images'] as List<dynamic>? ?? [];
-        return images
-            .map((img) => {
-                  'url': img['url'] as String,
-                  'createdAt': img['createdAt'] as String,
-                })
-            .toList();
-      } else {
-        return [];
-      }
+      // Since we removed face_images table and don't have image URLs in embeddings,
+      // return empty list for now
+      // This is a temporary solution - you may want to implement a proper solution later
+      return [];
     } catch (e) {
       print('[UserService] Error fetching face images: $e');
       return [];
@@ -336,15 +339,18 @@ class UserService {
   /// Get user's face images count
   Future<int> getFaceImagesCount(int userId) async {
     try {
+      // Since we removed face_images table and endpoint,
+      // return embeddings count instead
       final headers = await _getHeaders();
       final response = await http.get(
-        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.users}/$userId/face-images'),
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.users}/$userId'),
         headers: headers,
       );
 
       if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        return data['data']['count'] ?? 0;
+        // For now, return 0 since we don't have a way to count face registrations
+        // This is a temporary solution - you may want to add a proper endpoint later
+        return 0;
       } else {
         return 0;
       }

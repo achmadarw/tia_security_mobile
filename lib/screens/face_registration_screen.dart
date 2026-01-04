@@ -267,7 +267,7 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
                     setState(() {
                       _currentLivenessStep = LivenessStep.turnLeft;
                       _isPendingCapture = false;
-                      _statusMessage = 'Tengok kepala ke KIRI';
+                      _statusMessage = 'Tengok kepala ke KANAN';
                       _statusColor = Colors.blue;
                       print(
                           '[LIVENESS] 📸 Photos captured: ${_capturedImages.length}/$_requiredImages');
@@ -317,7 +317,7 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
                   setState(() {
                     _currentLivenessStep = LivenessStep.turnRight;
                     _isPendingCapture = false; // Reset flag
-                    _statusMessage = 'Tengok kepala ke KANAN';
+                    _statusMessage = 'Tengok kepala ke KIRI';
                     _statusColor = Colors.blue;
                     print(
                         '[LIVENESS] Photos captured: ${_capturedImages.length}/$_requiredImages');
@@ -338,7 +338,7 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
           });
         } else if (isLookingStraight) {
           setState(() {
-            _statusMessage = 'Tengok kepala ke KIRI';
+            _statusMessage = 'Tengok kepala ke KANAN';
             _statusColor = Colors.blue;
           });
         }
@@ -385,7 +385,7 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
           });
         } else if (isLookingStraight) {
           setState(() {
-            _statusMessage = 'Tengok kepala ke KANAN';
+            _statusMessage = 'Tengok kepala ke KIRI';
             _statusColor = Colors.blue;
           });
         }

@@ -279,8 +279,8 @@ class _QuickAttendanceScreenState extends State<QuickAttendanceScreen> {
               : LivenessStep.turnRight;
 
           _statusMessage = _currentLivenessStep == LivenessStep.turnLeft
-              ? 'Palingkan kepala ke KIRI'
-              : 'Palingkan kepala ke KANAN';
+              ? 'Palingkan kepala ke KANAN'
+              : 'Palingkan kepala ke KIRI';
           _statusColor = Colors.blue;
         });
       }
@@ -294,14 +294,14 @@ class _QuickAttendanceScreenState extends State<QuickAttendanceScreen> {
       if (headYaw < -20) {
         _captureStepAndComplete();
       } else if (headYaw < -10) {
-        _statusMessage = 'Palingkan lebih ke KIRI';
+        _statusMessage = 'Palingkan lebih ke KANAN';
         _statusColor = Colors.orange;
       }
     } else {
       if (headYaw > 20) {
         _captureStepAndComplete();
       } else if (headYaw > 10) {
-        _statusMessage = 'Palingkan lebih ke KANAN';
+        _statusMessage = 'Palingkan lebih ke KIRI';
         _statusColor = Colors.orange;
       }
     }
