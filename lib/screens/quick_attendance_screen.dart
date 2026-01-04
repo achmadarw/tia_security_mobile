@@ -200,9 +200,60 @@ class _QuickAttendanceScreenState extends State<QuickAttendanceScreen> {
       return;
     }
 
-    // Face detected - ready for capture
-    _statusMessage = 'Wajah terdeteksi! Tekan tombol untuk absen';
-    _statusColor = Colors.green;
+    final face = faces.first;
+
+    // Check basic face detection quality
+    final leftEye = face.leftEyeOpenProbability;
+    final rightEye = face.rightEyeOpenProbability;
+
+    if (leftEye == null || rightEye == null) {
+      _statusMessage = 'Posisikan wajah dengan jelas';
+      _statusColor = Colors.orange;
+      return;
+    }
+
+    // Blink detection for liveness
+    final eyesOpen = leftEye > 0.5 && rightEye > 0.5;
+    final eyesClosed = leftEye < 0.3 && rightEye < 0.3;
+
+    if (_currentLivenessStep == LivenessStep.initial) {
+      if (eyesOpen) {
+        setState(() {
+          _eyesWereOpen = true;
+          _statusMessage = 'Kedipkan mata Anda';
+          _statusColor = Colors.blue;
+        });
+      }
+    } else if (_currentLivenessStep == LivenessStep.blinkFirst) {
+      if (!_eyesWereOpen && eyesOpen) {
+        // Eyes reopened after blink
+        setState(() {
+          _eyesWereOpen = true;
+          _currentLivenessStep = LivenessStep.completed;
+          _statusMessage = 'Liveness terverifikasi! Memproses...';
+          _statusColor = Colors.green;
+        });
+        // Auto-capture after blink detected
+        Future.delayed(const Duration(milliseconds: 300), () {
+          _processAttendance();
+        });
+      } else if (eyesClosed) {
+        _eyesWereOpen = false;
+      }
+    }
+
+    // Detect first blink
+    if (_currentLivenessStep == LivenessStep.initial &&
+        _eyesWereOpen &&
+        eyesClosed) {
+      setState(() {
+        _currentLivenessStep = LivenessStep.blinkFirst;
+        _currentStep = 1;
+        _statusMessage = 'Kedipan terdeteksi! Buka mata...';
+        _statusColor = Colors.orange;
+        _eyesWereOpen = false;
+      });
+    }
   }
 
   Future<void> _processAttendance() async {
@@ -814,46 +865,40 @@ class _QuickAttendanceScreenState extends State<QuickAttendanceScreen> {
                   ),
                 ),
 
-              // Capture button - SAME as face_login
-              if (!_isProcessing && _isInitialized && !_hasError)
+              // Progress indicator for liveness steps
+              if (_currentLivenessStep != LivenessStep.initial &&
+                  !_isProcessing)
                 Positioned(
-                  bottom: 40,
+                  top: 120,
                   left: 0,
                   right: 0,
                   child: Center(
-                    child: ElevatedButton(
-                      onPressed:
-                          _detectedFaces.isNotEmpty ? _processAttendance : null,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _detectedFaces.isNotEmpty
-                            ? Colors.green
-                            : Colors.grey,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 50,
-                          vertical: 15,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(30),
-                        ),
-                        elevation: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 12,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.7),
+                        borderRadius: BorderRadius.circular(20),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(
-                            _detectedFaces.isNotEmpty
-                                ? Icons.camera_alt
-                                : Icons.camera_alt_outlined,
+                            _currentLivenessStep == LivenessStep.completed
+                                ? Icons.check_circle
+                                : Icons.remove_red_eye,
                             color: Colors.white,
-                            size: 28,
+                            size: 20,
                           ),
-                          const SizedBox(width: 12),
-                          const Text(
-                            'ABSEN SEKARANG',
-                            style: TextStyle(
+                          const SizedBox(width: 8),
+                          Text(
+                            'Step ${_currentStep}/$_totalSteps',
+                            style: const TextStyle(
                               color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
                         ],
