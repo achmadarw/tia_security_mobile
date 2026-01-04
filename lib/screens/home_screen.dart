@@ -77,6 +77,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     try {
       final data = await widget.authService.getTodayAttendance();
 
+      print(
+          '[HOME] getTodayAttendance response: ${data != null ? "SUCCESS" : "NULL"}');
+      if (data != null) {
+        print('[HOME] isCheckedIn: ${data['isCheckedIn']}');
+        print('[HOME] shifts count: ${data['shifts']?.length ?? 0}');
+        print(
+            '[HOME] currentShift: ${data['currentShift'] != null ? "YES" : "NO"}');
+        print(
+            '[HOME] completedShifts: ${data['completedShifts']?.length ?? 0}');
+      }
+
       if (data != null && mounted) {
         setState(() {
           // Shift assignments
@@ -151,10 +162,20 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               _statusText = 'Shift Selesai';
             }
           } else {
-            _checkInTime = '--:--';
-            _checkOutTime = '--:--';
-            _currentDuration = '--';
-            _statusText = 'Belum Check-in';
+            // No current or completed shifts
+            if (_isCheckedIn) {
+              // User is checked in but no shift data yet
+              _checkInTime = '--:--';
+              _checkOutTime = '--:--';
+              _currentDuration = '--';
+              _statusText = 'Check-in Aktif';
+            } else {
+              // User has not checked in
+              _checkInTime = '--:--';
+              _checkOutTime = '--:--';
+              _currentDuration = '--';
+              _statusText = 'Belum Check-in';
+            }
           }
 
           // Total from all shifts

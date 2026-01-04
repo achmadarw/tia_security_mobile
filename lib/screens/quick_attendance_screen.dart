@@ -41,8 +41,9 @@ class _QuickAttendanceScreenState extends State<QuickAttendanceScreen> {
   bool _isProcessing = false;
   bool _isDetecting = false;
   bool _hasError = false;
+  bool _needsCheckoutConfirmation = false;
 
-  String _statusMessage = 'Initializing camera...';
+  String _statusMessage = 'Checking attendance status...';
   Color _statusColor = Colors.orange;
 
   List<Face> _detectedFaces = [];
@@ -68,14 +69,25 @@ class _QuickAttendanceScreenState extends State<QuickAttendanceScreen> {
   Future<void> _fetchTodayAssignment() async {
     try {
       final response = await widget.authService.getTodayAttendance();
-      if (response != null && response['success'] == true) {
-        final data = response['data'] as Map<String, dynamic>?;
-        final assignments = data?['assignments'] as List?;
+      if (response != null) {
+        // Response is direct from backend (no 'success' or 'data' wrapper)
+        final assignments = response['assignments'] as List?;
+        final isCheckedIn = response['isCheckedIn'] == true;
+
+        print('[QUICK_ATTENDANCE] Fetched status - isCheckedIn: $isCheckedIn');
+
         setState(() {
           _todayAssignment =
               assignments?.isNotEmpty == true ? assignments!.first : null;
           _isLoadingAssignment = false;
+          _needsCheckoutConfirmation = isCheckedIn;
         });
+
+        // Show confirmation dialog if already checked in
+        if (isCheckedIn && mounted) {
+          print('[QUICK_ATTENDANCE] Showing checkout confirmation dialog');
+          _showCheckoutConfirmationDialog();
+        }
       } else {
         setState(() {
           _isLoadingAssignment = false;
@@ -108,8 +120,11 @@ class _QuickAttendanceScreenState extends State<QuickAttendanceScreen> {
       print('[QUICK_ATTENDANCE] Location permission error: $e');
     }
 
-    // Initialize camera after permission
-    await _initializeServices();
+    // Only initialize camera if no checkout confirmation is needed
+    // If confirmation needed, camera will be initialized after user confirms
+    if (!_needsCheckoutConfirmation) {
+      await _initializeServices();
+    }
   }
 
   Future<void> _initializeServices() async {
@@ -460,6 +475,20 @@ class _QuickAttendanceScreenState extends State<QuickAttendanceScreen> {
           );
         }
       } else {
+        // Check for non-retryable errors (dialog instead of retry button)
+        final error = result['error'];
+        if (error != null &&
+            error.toString().toUpperCase() == 'ALREADY_CHECKED_IN') {
+          _showAlreadyCheckedInDialog();
+          return;
+        }
+
+        if (error != null &&
+            error.toString().toUpperCase() == 'SHIFT_NOT_ENDED') {
+          _showShiftNotEndedDialog(result['message']);
+          return;
+        }
+
         if (result['requiresReverification'] == true) {
           _showError(
               'Absensi menunggu verifikasi: ${_translateErrorReason(result['reason'])}');
@@ -519,6 +548,10 @@ class _QuickAttendanceScreenState extends State<QuickAttendanceScreen> {
       return 'Terdeteksi lebih dari satu wajah.\nPastikan hanya wajah Anda yang terlihat.';
     }
 
+    if (errorUpper.contains('SHIFT_NOT_ENDED')) {
+      return 'Anda sudah menyelesaikan shift hari ini.\nAnda dapat check-in lagi setelah jam shift berakhir.';
+    }
+
     // Return original error if no translation found
     return error;
   }
@@ -576,6 +609,168 @@ class _QuickAttendanceScreenState extends State<QuickAttendanceScreen> {
                   context, true); // Close attendance screen with result=true
             },
             child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showCheckoutConfirmationDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const Icon(Icons.logout, color: Colors.blue, size: 32),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Konfirmasi Check-Out',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: const Text(
+          'Anda sudah check-in hari ini.\n\nApakah Anda ingin melakukan check-out sekarang?',
+          style: TextStyle(fontSize: 16),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context); // Close dialog
+              Navigator.pop(context); // Close attendance screen
+            },
+            child: const Text('Batal', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(context); // Close dialog
+              // Initialize camera for checkout
+              setState(() {
+                _statusMessage = 'Initializing camera for check-out...';
+              });
+              await _initializeServices();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Ya, Check-Out'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAlreadyCheckedInDialog() async {
+    // Stop camera stream
+    try {
+      if (_cameraController != null &&
+          _cameraController!.value.isStreamingImages) {
+        await _cameraController!.stopImageStream();
+      }
+    } catch (e) {
+      print('[QUICK_ATTENDANCE] Error stopping stream: $e');
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      _isProcessing = false;
+    });
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const Icon(Icons.info_outline, color: Colors.blue, size: 32),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Sudah Check-In',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: const Text(
+          'Anda sudah melakukan check-in hari ini.\n\nJika ingin check-out, silakan gunakan fitur check-out.',
+          style: TextStyle(fontSize: 16),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context); // Close dialog
+              Navigator.pop(context); // Close attendance screen
+            },
+            child: const Text('Tutup'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showShiftNotEndedDialog(String? message) async {
+    // Stop camera stream
+    try {
+      if (_cameraController != null &&
+          _cameraController!.value.isStreamingImages) {
+        await _cameraController!.stopImageStream();
+      }
+    } catch (e) {
+      print('[QUICK_ATTENDANCE] Error stopping stream: $e');
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      _isProcessing = false;
+    });
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const Icon(Icons.schedule, color: Colors.orange, size: 32),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Shift Belum Berakhir',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          message ??
+              'Anda sudah menyelesaikan shift hari ini. Anda dapat check-in lagi setelah jam shift berakhir.',
+          style: const TextStyle(fontSize: 16),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context); // Close dialog
+              Navigator.pop(context); // Close attendance screen
+            },
+            child: const Text('Tutup'),
           ),
         ],
       ),
@@ -642,6 +837,30 @@ class _QuickAttendanceScreenState extends State<QuickAttendanceScreen> {
         child: SafeArea(
           child: Stack(
             children: [
+              // Loading indicator while checking status
+              if (_isLoadingAssignment && !_isInitialized)
+                Container(
+                  color: Colors.black87,
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const CircularProgressIndicator(
+                          color: Colors.white,
+                        ),
+                        const SizedBox(height: 20),
+                        Text(
+                          _statusMessage,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
               // Camera preview
               if (_isInitialized && _cameraController != null)
                 SizedBox.expand(
@@ -704,60 +923,6 @@ class _QuickAttendanceScreenState extends State<QuickAttendanceScreen> {
                 child: Column(
                   children: [
                     // Shift assignment card
-                    if (!_isLoadingAssignment && _todayAssignment != null)
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: BackdropFilter(
-                          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                          child: Container(
-                            padding: const EdgeInsets.all(12),
-                            margin: const EdgeInsets.only(bottom: 12),
-                            decoration: BoxDecoration(
-                              color: Colors.blue.shade700.withOpacity(0.85),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: Colors.blue.shade300.withOpacity(0.5),
-                                width: 1,
-                              ),
-                            ),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.calendar_today,
-                                  color: Colors.white,
-                                  size: 18,
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'Shift Terjadwal',
-                                        style: TextStyle(
-                                          color: Colors.white.withOpacity(0.9),
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        '${(_todayAssignment?['shift'] as Map?)?['name'] ?? ''} (${(_todayAssignment?['shift'] as Map?)?['start_time'] ?? ''} - ${(_todayAssignment?['shift'] as Map?)?['end_time'] ?? ''})',
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
 
                     // Status message
                     ClipRRect(
