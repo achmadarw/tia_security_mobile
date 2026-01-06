@@ -1334,62 +1334,250 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         // Fetch fresh data to check current status
         final data = await widget.authService.getTodayAttendance();
         final isCheckedIn = data?['isCheckedIn'] == true;
+        final currentShift = data?['currentShift'];
+        final completedShifts = data?['completedShifts'] as List?;
 
         print('[HOME] Button tap - isCheckedIn: $isCheckedIn');
+        print(
+            '[HOME] Button tap - completedShifts: ${completedShifts?.length ?? 0}');
 
-        // Check if already checked in BEFORE navigating
+        // Case 1: Already checked in (wants to checkout)
         if (isCheckedIn) {
-          // Show confirmation dialog in home screen
-          final confirmed = await showDialog<bool>(
-            context: context,
-            barrierDismissible: false,
-            builder: (context) => AlertDialog(
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16)),
-              title: Row(
-                children: [
-                  const Icon(Icons.logout, color: Colors.blue, size: 32),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Text(
-                      'Konfirmasi Check-Out',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
+          // Check if current shift has ended
+          bool shiftEnded = true;
+          String? shiftEndTime;
+
+          if (currentShift != null && currentShift['checkIn'] != null) {
+            final checkInData = currentShift['checkIn'];
+            shiftEndTime = checkInData['shift_end_time'];
+
+            if (shiftEndTime != null) {
+              try {
+                final now = DateTime.now();
+                final endTimeParts = shiftEndTime.split(':');
+                final endDateTime = DateTime(
+                  now.year,
+                  now.month,
+                  now.day,
+                  int.parse(endTimeParts[0]),
+                  int.parse(endTimeParts[1]),
+                );
+                shiftEnded = now.isAfter(endDateTime);
+                print(
+                    '[HOME] Current shift end: $shiftEndTime, ended: $shiftEnded');
+              } catch (e) {
+                print('[HOME] Error parsing shift end time: $e');
+              }
+            }
+          }
+
+          // Show warning if trying to checkout before shift ends
+          if (!shiftEnded) {
+            final proceed = await showDialog<bool>(
+              context: context,
+              barrierDismissible: false,
+              builder: (context) => AlertDialog(
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16)),
+                title: Row(
+                  children: [
+                    const Icon(Icons.schedule, color: Colors.orange, size: 32),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        'Shift Belum Berakhir',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
+                  ],
+                ),
+                content: Text(
+                  'Shift Anda akan berakhir pada pukul ${shiftEndTime ?? "-"}.\n\nApakah Anda yakin ingin check-out sekarang?',
+                  style: const TextStyle(fontSize: 16),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Batal',
+                        style: TextStyle(color: Colors.grey)),
+                  ),
+                  ElevatedButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange,
+                      foregroundColor: Colors.white,
+                    ),
+                    child: const Text('Ya, Lanjutkan'),
                   ),
                 ],
               ),
-              content: const Text(
-                'Anda sudah check-in hari ini.\n\nApakah Anda ingin melakukan check-out sekarang?',
-                style: TextStyle(fontSize: 16),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child:
-                      const Text('Batal', style: TextStyle(color: Colors.grey)),
+            );
+
+            if (proceed != true) {
+              print('[HOME] User cancelled early checkout');
+              return;
+            }
+
+            print('[HOME] User confirmed early checkout');
+          } else {
+            // Normal checkout confirmation
+            final confirmed = await showDialog<bool>(
+              context: context,
+              barrierDismissible: false,
+              builder: (context) => AlertDialog(
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16)),
+                title: Row(
+                  children: [
+                    const Icon(Icons.logout, color: Colors.blue, size: 32),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        'Konfirmasi Check-Out',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                ElevatedButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue,
-                    foregroundColor: Colors.white,
+                content: const Text(
+                  'Anda sudah check-in hari ini.\n\nApakah Anda ingin melakukan check-out sekarang?',
+                  style: TextStyle(fontSize: 16),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Batal',
+                        style: TextStyle(color: Colors.grey)),
                   ),
-                  child: const Text('Ya, Check-Out'),
-                ),
-              ],
-            ),
-          );
+                  ElevatedButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      foregroundColor: Colors.white,
+                    ),
+                    child: const Text('Ya, Check-Out'),
+                  ),
+                ],
+              ),
+            );
 
-          // If cancelled, don't proceed
-          if (confirmed != true) {
-            print('[HOME] User cancelled checkout');
-            return;
+            if (confirmed != true) {
+              print('[HOME] User cancelled checkout');
+              return;
+            }
+
+            print('[HOME] User confirmed checkout');
           }
+        } else {
+          // Case 2: Not checked in (wants to check-in)
+          // Check if user already completed a shift today and shift hasn't ended
+          print('[HOME] Checking completed shifts...');
+          print('[HOME] completedShifts: ${completedShifts?.length ?? 0}');
 
-          print('[HOME] User confirmed checkout');
+          if (completedShifts != null && completedShifts.isNotEmpty) {
+            print('[HOME] completedShifts data: ${completedShifts}');
+            final lastCompletedShift = completedShifts.last;
+            print('[HOME] Last completed shift: ${lastCompletedShift}');
+
+            final checkInData = lastCompletedShift['checkIn'];
+            final checkOutData = lastCompletedShift['checkOut'];
+            print('[HOME] checkInData: ${checkInData}');
+            print('[HOME] checkOutData: ${checkOutData}');
+
+            // Try to get shift_end_time from checkIn first, fallback to checkOut
+            String? lastShiftEndTime = checkInData?['shift_end_time'] ??
+                checkInData?['end_time'] ??
+                checkOutData?['shift_end_time'] ??
+                checkOutData?['end_time'];
+
+            print('[HOME] lastShiftEndTime: $lastShiftEndTime');
+
+            if (lastShiftEndTime != null) {
+              try {
+                final now = DateTime.now();
+                print('[HOME] Current time: ${now.toString()}');
+
+                final endTimeParts = lastShiftEndTime.split(':');
+                final endDateTime = DateTime(
+                  now.year,
+                  now.month,
+                  now.day,
+                  int.parse(endTimeParts[0]),
+                  int.parse(endTimeParts[1]),
+                );
+                print('[HOME] Shift end DateTime: ${endDateTime.toString()}');
+
+                final lastShiftEnded = now.isAfter(endDateTime);
+                print(
+                    '[HOME] Last shift end: $lastShiftEndTime, ended: $lastShiftEnded, now: ${now.hour}:${now.minute}');
+
+                // Show warning if last shift hasn't ended yet
+                if (!lastShiftEnded) {
+                  print('[HOME] ⚠️ Shift not ended - showing warning dialog');
+                  final proceed = await showDialog<bool>(
+                    context: context,
+                    barrierDismissible: false,
+                    builder: (context) => AlertDialog(
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16)),
+                      title: Row(
+                        children: [
+                          const Icon(Icons.schedule,
+                              color: Colors.orange, size: 32),
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: Text(
+                              'Shift Sebelumnya Belum Berakhir',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      content: Text(
+                        'Shift sebelumnya akan berakhir pada pukul ${lastShiftEndTime}.\n\nApakah Anda yakin ingin check-in untuk shift backup sekarang?',
+                        style: const TextStyle(fontSize: 16),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, false),
+                          child: const Text('Batal',
+                              style: TextStyle(color: Colors.grey)),
+                        ),
+                        ElevatedButton(
+                          onPressed: () => Navigator.pop(context, true),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.orange,
+                            foregroundColor: Colors.white,
+                          ),
+                          child: const Text('Ya, Lanjutkan'),
+                        ),
+                      ],
+                    ),
+                  );
+
+                  if (proceed != true) {
+                    print(
+                        '[HOME] User cancelled early check-in for backup shift');
+                    return;
+                  }
+
+                  print(
+                      '[HOME] User confirmed early check-in for backup shift');
+                }
+              } catch (e) {
+                print('[HOME] Error parsing last shift end time: $e');
+              }
+            }
+          }
         }
 
         // Proceed to quick attendance screen
@@ -1755,62 +1943,254 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           // Fetch fresh data to check current status
           final data = await widget.authService.getTodayAttendance();
           final isCheckedIn = data?['isCheckedIn'] == true;
+          final currentShift = data?['currentShift'];
+          final completedShifts = data?['completedShifts'] as List?;
 
           print('[HOME] FAB tap - isCheckedIn: $isCheckedIn');
+          print(
+              '[HOME] FAB tap - completedShifts: ${completedShifts?.length ?? 0}');
 
-          // Check if already checked in BEFORE navigating
+          // Case 1: Already checked in (wants to checkout)
           if (isCheckedIn) {
-            // Show confirmation dialog
-            final confirmed = await showDialog<bool>(
-              context: context,
-              barrierDismissible: false,
-              builder: (context) => AlertDialog(
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16)),
-                title: Row(
-                  children: [
-                    const Icon(Icons.logout, color: Colors.blue, size: 32),
-                    const SizedBox(width: 12),
-                    const Expanded(
-                      child: Text(
-                        'Konfirmasi Check-Out',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
+            // Check if shift has ended
+            bool shiftEnded = true;
+            String? shiftEndTime;
+
+            if (currentShift != null && currentShift['checkIn'] != null) {
+              final checkInData = currentShift['checkIn'];
+              shiftEndTime = checkInData['shift_end_time'];
+
+              if (shiftEndTime != null) {
+                try {
+                  final now = DateTime.now();
+                  final endTimeParts = shiftEndTime.split(':');
+                  final endDateTime = DateTime(
+                    now.year,
+                    now.month,
+                    now.day,
+                    int.parse(endTimeParts[0]),
+                    int.parse(endTimeParts[1]),
+                  );
+                  shiftEnded = now.isAfter(endDateTime);
+                  print(
+                      '[HOME] FAB - Shift end check: $shiftEndTime, ended: $shiftEnded');
+                } catch (e) {
+                  print('[HOME] FAB - Error parsing shift end time: $e');
+                }
+              }
+            }
+
+            // If shift not ended, show warning
+            if (!shiftEnded) {
+              final proceed = await showDialog<bool>(
+                context: context,
+                barrierDismissible: false,
+                builder: (context) => AlertDialog(
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16)),
+                  title: Row(
+                    children: [
+                      const Icon(Icons.schedule,
+                          color: Colors.orange, size: 32),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Text(
+                          'Shift Belum Berakhir',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
+                    ],
+                  ),
+                  content: Text(
+                    'Shift Anda akan berakhir pada pukul ${shiftEndTime ?? "-"}.\n\nApakah Anda yakin ingin check-out sekarang?',
+                    style: const TextStyle(fontSize: 16),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Batal',
+                          style: TextStyle(color: Colors.grey)),
+                    ),
+                    ElevatedButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('Ya, Lanjutkan'),
                     ),
                   ],
                 ),
-                content: const Text(
-                  'Anda sudah check-in hari ini.\n\nApakah Anda ingin melakukan check-out sekarang?',
-                  style: TextStyle(fontSize: 16),
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context, false),
-                    child: const Text('Batal',
-                        style: TextStyle(color: Colors.grey)),
+              );
+
+              if (proceed != true) {
+                print('[HOME] FAB - User cancelled early checkout');
+                return;
+              }
+
+              print('[HOME] FAB - User confirmed early checkout');
+            } else {
+              // Shift already ended, show normal confirmation
+              final confirmed = await showDialog<bool>(
+                context: context,
+                barrierDismissible: false,
+                builder: (context) => AlertDialog(
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16)),
+                  title: Row(
+                    children: [
+                      const Icon(Icons.logout, color: Colors.blue, size: 32),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Text(
+                          'Konfirmasi Check-Out',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  ElevatedButton(
-                    onPressed: () => Navigator.pop(context, true),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue,
-                      foregroundColor: Colors.white,
+                  content: const Text(
+                    'Anda sudah check-in hari ini.\n\nApakah Anda ingin melakukan check-out sekarang?',
+                    style: TextStyle(fontSize: 16),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Batal',
+                          style: TextStyle(color: Colors.grey)),
                     ),
-                    child: const Text('Ya, Check-Out'),
-                  ),
-                ],
-              ),
-            );
+                    ElevatedButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('Ya, Check-Out'),
+                    ),
+                  ],
+                ),
+              );
 
-            // If cancelled, don't proceed
-            if (confirmed != true) {
-              print('[HOME] FAB - User cancelled checkout');
-              return;
+              if (confirmed != true) {
+                print('[HOME] FAB - User cancelled checkout');
+                return;
+              }
+
+              print('[HOME] FAB - User confirmed checkout');
             }
+          } else {
+            // Case 2: Not checked in (wants to check-in)
+            // Check if user already completed a shift today and shift hasn't ended
+            print('[HOME] FAB - Checking completed shifts...');
+            print(
+                '[HOME] FAB - completedShifts: ${completedShifts?.length ?? 0}');
 
-            print('[HOME] FAB - User confirmed checkout');
+            if (completedShifts != null && completedShifts.isNotEmpty) {
+              print('[HOME] FAB - completedShifts data: ${completedShifts}');
+              final lastCompletedShift = completedShifts.last;
+              print('[HOME] FAB - Last completed shift: ${lastCompletedShift}');
+
+              final checkInData = lastCompletedShift['checkIn'];
+              final checkOutData = lastCompletedShift['checkOut'];
+              print('[HOME] FAB - checkInData: ${checkInData}');
+              print('[HOME] FAB - checkOutData: ${checkOutData}');
+
+              // Try to get shift_end_time from checkIn first, fallback to checkOut
+              String? lastShiftEndTime = checkInData?['shift_end_time'] ??
+                  checkInData?['end_time'] ??
+                  checkOutData?['shift_end_time'] ??
+                  checkOutData?['end_time'];
+
+              print('[HOME] FAB - lastShiftEndTime: $lastShiftEndTime');
+
+              if (lastShiftEndTime != null) {
+                try {
+                  final now = DateTime.now();
+                  print('[HOME] FAB - Current time: ${now.toString()}');
+
+                  final endTimeParts = lastShiftEndTime.split(':');
+                  final endDateTime = DateTime(
+                    now.year,
+                    now.month,
+                    now.day,
+                    int.parse(endTimeParts[0]),
+                    int.parse(endTimeParts[1]),
+                  );
+                  print(
+                      '[HOME] FAB - Shift end DateTime: ${endDateTime.toString()}');
+
+                  final lastShiftEnded = now.isAfter(endDateTime);
+                  print(
+                      '[HOME] FAB - Last shift end: $lastShiftEndTime, ended: $lastShiftEnded, now: ${now.hour}:${now.minute}');
+
+                  // Show warning if last shift hasn't ended yet
+                  if (!lastShiftEnded) {
+                    print(
+                        '[HOME] FAB - ⚠️ Shift not ended - showing warning dialog');
+                    final proceed = await showDialog<bool>(
+                      context: context,
+                      barrierDismissible: false,
+                      builder: (context) => AlertDialog(
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16)),
+                        title: Row(
+                          children: [
+                            const Icon(Icons.schedule,
+                                color: Colors.orange, size: 32),
+                            const SizedBox(width: 12),
+                            const Expanded(
+                              child: Text(
+                                'Shift Sebelumnya Belum Berakhir',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        content: Text(
+                          'Shift sebelumnya akan berakhir pada pukul ${lastShiftEndTime}.\n\nApakah Anda yakin ingin check-in untuk shift backup sekarang?',
+                          style: const TextStyle(fontSize: 16),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context, false),
+                            child: const Text('Batal',
+                                style: TextStyle(color: Colors.grey)),
+                          ),
+                          ElevatedButton(
+                            onPressed: () => Navigator.pop(context, true),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.orange,
+                              foregroundColor: Colors.white,
+                            ),
+                            child: const Text('Ya, Lanjutkan'),
+                          ),
+                        ],
+                      ),
+                    );
+
+                    if (proceed != true) {
+                      print(
+                          '[HOME] FAB - User cancelled early check-in for backup shift');
+                      return;
+                    }
+
+                    print(
+                        '[HOME] FAB - User confirmed early check-in for backup shift');
+                  }
+                } catch (e) {
+                  print('[HOME] FAB - Error parsing last shift end time: $e');
+                }
+              }
+            }
           }
 
           // Proceed to quick attendance screen
