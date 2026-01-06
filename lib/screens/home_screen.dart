@@ -628,15 +628,20 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       ),
                       const SizedBox(height: 8),
                       ..._todayAssignments.map((assignment) {
-                        final shift = assignment['shift'];
-                        if (shift == null) return const SizedBox.shrink();
+                        // Backend returns flat structure with shift_name, start_time, end_time
+                        final shiftName = assignment['shift_name'];
+                        final startTime = assignment['start_time'];
+                        final endTime = assignment['end_time'];
+
+                        if (shiftName == null) return const SizedBox.shrink();
+
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 4),
                           child: Row(
                             children: [
                               Expanded(
                                 child: Text(
-                                  '${shift['name']} (${shift['start_time']} - ${shift['end_time']})',
+                                  '$shiftName ($startTime - $endTime)',
                                   style: TextStyle(
                                     color: isDark
                                         ? AppColors.darkTextSecondary
