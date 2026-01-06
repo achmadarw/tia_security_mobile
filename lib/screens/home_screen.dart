@@ -39,6 +39,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   List<dynamic> _shifts = [];
   Map<String, dynamic>? _currentShift;
   List<dynamic> _completedShifts = [];
+  Map<String, dynamic>? _lastCompletedShift24h; // Last shift in 24 hours
   bool _isCardExpanded = false; // For expandable card
   List<dynamic> _todayAssignments = []; // Shift assignments for today
   bool _hasAssignments = false;
@@ -100,6 +101,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           _isCheckedIn = data['isCheckedIn'] ?? false;
           _currentShift = data['currentShift'];
           _completedShifts = data['completedShifts'] ?? [];
+          _lastCompletedShift24h = data['lastCompletedShift24h']; // New field
 
           // Display CURRENT SHIFT (not first shift)
           if (_currentShift != null) {
@@ -586,6 +588,158 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               const Divider(color: Colors.white24, height: 1),
               const SizedBox(height: 20),
 
+              // Last Completed Shift Summary (if user is off today but worked recently)
+              if (_lastCompletedShift24h != null &&
+                  !_isCheckedIn &&
+                  _completedShifts.isEmpty)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: isDark
+                          ? [
+                              Colors.green.shade800.withOpacity(0.4),
+                              Colors.green.shade900.withOpacity(0.2),
+                            ]
+                          : [
+                              Colors.green.shade700.withOpacity(0.3),
+                              Colors.green.shade800.withOpacity(0.15),
+                            ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: isDark
+                          ? Colors.green.shade700.withOpacity(0.5)
+                          : Colors.white.withOpacity(0.3),
+                      width: 1.5,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 8,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.green.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(
+                              Icons.check_circle,
+                              color: Colors.green.shade300,
+                              size: 20,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Shift Terakhir',
+                                  style: TextStyle(
+                                    color: isDark
+                                        ? AppColors.darkTextPrimary
+                                        : Colors.white,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  _lastCompletedShift24h!['shift_name'] ??
+                                      'Shift',
+                                  style: TextStyle(
+                                    color: isDark
+                                        ? Colors.green.shade300
+                                        : Colors.white.withOpacity(0.9),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.green.withOpacity(0.3),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              '${_lastCompletedShift24h!['hours']}j ${_lastCompletedShift24h!['minutes']}m',
+                              style: TextStyle(
+                                color: isDark
+                                    ? Colors.green.shade200
+                                    : Colors.white,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Divider(
+                        color: isDark
+                            ? Colors.white.withOpacity(0.1)
+                            : Colors.white.withOpacity(0.2),
+                        height: 1,
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildLastShiftInfoItem(
+                              icon: Icons.login,
+                              label: 'Check-in',
+                              value: DateFormat('HH:mm, dd MMM').format(
+                                DateTime.parse(
+                                        _lastCompletedShift24h!['checkIn']
+                                            ['created_at'])
+                                    .toLocal(),
+                              ),
+                              isDark: isDark,
+                            ),
+                          ),
+                          Container(
+                            width: 1,
+                            height: 40,
+                            color: isDark
+                                ? Colors.white.withOpacity(0.1)
+                                : Colors.white.withOpacity(0.2),
+                          ),
+                          Expanded(
+                            child: _buildLastShiftInfoItem(
+                              icon: Icons.logout,
+                              label: 'Check-out',
+                              value: DateFormat('HH:mm, dd MMM').format(
+                                DateTime.parse(
+                                        _lastCompletedShift24h!['checkOut']
+                                            ['created_at'])
+                                    .toLocal(),
+                              ),
+                              isDark: isDark,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+
               // Shift assignment info (if any)
               if (_hasAssignments && _todayAssignments.isNotEmpty)
                 Container(
@@ -889,21 +1043,25 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           Icons.timer_outlined,
                         ),
                       ),
-                      Container(
-                        width: 2,
-                        height: 50,
-                        color: isDark
-                            ? AppColors.dividerDark
-                            : Colors.white.withOpacity(0.4),
-                      ),
+                      // Only show divider if Total will be shown
+                      if (_totalTime != '0j 0m')
+                        Container(
+                          width: 2,
+                          height: 50,
+                          color: isDark
+                              ? AppColors.dividerDark
+                              : Colors.white.withOpacity(0.4),
+                        ),
                     ],
-                    Expanded(
-                      child: _buildStatusInfo(
-                        'Total Hari Ini',
-                        _totalTime,
-                        Icons.access_time,
+                    // Only show "Total Hari Ini" if not 0j 0m
+                    if (_totalTime != '0j 0m')
+                      Expanded(
+                        child: _buildStatusInfo(
+                          'Total Hari Ini',
+                          _totalTime,
+                          Icons.access_time,
+                        ),
                       ),
-                    ),
                   ],
                 ),
 
@@ -2427,6 +2585,47 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildLastShiftInfoItem({
+    required IconData icon,
+    required String label,
+    required String value,
+    required bool isDark,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Column(
+        children: [
+          Icon(
+            icon,
+            color: isDark ? Colors.green.shade300 : Colors.white,
+            size: 18,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: TextStyle(
+              color: isDark
+                  ? AppColors.darkTextSecondary
+                  : Colors.white.withOpacity(0.8),
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            style: TextStyle(
+              color: isDark ? AppColors.darkTextPrimary : Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
       ),
     );
   }
