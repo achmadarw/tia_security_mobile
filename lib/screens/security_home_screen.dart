@@ -10,6 +10,7 @@ import '../services/auth_service.dart';
 import '../config/theme.dart';
 import 'app_selector_screen.dart';
 import 'security_checkin_screen.dart';
+import 'security_personil_detail_screen.dart';
 
 /// Security Home Screen V3
 /// Modern redesign matching community app UI/UX
@@ -39,6 +40,7 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
   String _currentDuration = '--';
   int _totalCheckIns = 0;
   int _totalPatrols = 0;
+  final Map<int, bool> _expandedPersonil = {};
 
   final SecurityAppService _service = SecurityAppService();
   final ImagePicker _imagePicker = ImagePicker();
@@ -87,9 +89,28 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
       }
 
       _updateStatusFromSession();
+
+      // Mark active personil in roster
+      _markActivePersonil();
     }
 
     _loadTodayTimeline();
+  }
+
+  void _markActivePersonil() {
+    final roster = widget.sessionData['roster'] as List?;
+    if (roster != null && _selectedPersonil != null) {
+      for (var personil in roster) {
+        if (personil['user_id'] == _selectedPersonil!['user_id']) {
+          personil['is_active'] = true;
+          personil['check_in_time'] = _checkInTime;
+          personil['pos_location'] =
+              widget.sessionData['pos']?['name'] ?? 'Pos Utama';
+        } else {
+          personil['is_active'] = false;
+        }
+      }
+    }
   }
 
   void _updateStatusFromSession() {
@@ -180,6 +201,14 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
               ),
             ),
 
+            // Roster Personil Bertugas
+            SliverToBoxAdapter(
+              child: FadeTransition(
+                opacity: _fadeAnimation,
+                child: _buildPersonilRoster(isDark, roster),
+              ),
+            ),
+
             // Quick Stats
             SliverToBoxAdapter(
               child: FadeTransition(
@@ -225,75 +254,83 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  Hero(
-                    tag: 'user_avatar',
-                    child: Container(
-                      padding: const EdgeInsets.all(3),
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.white,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.1),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: CircleAvatar(
-                        radius: 28,
-                        backgroundColor: isDark
-                            ? AppColors.darkPrimary
-                            : AppColors.lightPrimaryLight,
-                        child: Text(
-                          _selectedPersonil != null
-                              ? _selectedPersonil!['name']
-                                  .toString()[0]
-                                  .toUpperCase()
-                              : 'S',
-                          style: TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                            color: isDark ? Colors.black : Colors.white,
+              Expanded(
+                child: Row(
+                  children: [
+                    Hero(
+                      tag: 'user_avatar',
+                      child: Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Colors.white,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.1),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: CircleAvatar(
+                          radius: 28,
+                          backgroundColor: isDark
+                              ? AppColors.darkPrimary
+                              : AppColors.lightPrimaryLight,
+                          child: Text(
+                            _selectedPersonil != null
+                                ? _selectedPersonil!['name']
+                                    .toString()[0]
+                                    .toUpperCase()
+                                : 'S',
+                            style: TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                              color: isDark ? Colors.black : Colors.white,
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        (pos is Map && pos['name'] != null)
-                            ? pos['name']
-                            : 'Pos Security',
-                        style: TextStyle(
-                          color: isDark
-                              ? AppColors.darkTextSecondary
-                              : Colors.white70,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            (pos is Map && pos['name'] != null)
+                                ? pos['name']
+                                : 'Pos Security',
+                            style: TextStyle(
+                              color: isDark
+                                  ? AppColors.darkTextPrimary
+                                  : Colors.white,
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.3,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            (pos is Map && pos['address'] != null)
+                                ? pos['address']
+                                : (pos is Map &&
+                                        pos['location_description'] != null)
+                                    ? pos['location_description']
+                                    : 'Area Perumahan',
+                            style: TextStyle(
+                              color: isDark
+                                  ? AppColors.darkTextSecondary
+                                  : Colors.white70,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        _selectedPersonil != null
-                            ? _selectedPersonil!['name']
-                            : 'Pilih Personil',
-                        style: TextStyle(
-                          color:
-                              isDark ? AppColors.darkTextPrimary : Colors.white,
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                    ),
+                  ],
+                ),
               ),
               Row(
                 children: [
@@ -389,28 +426,14 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
   }
 
   Widget _buildStatusCard(bool isDark) {
-    // Dynamic color based on status
-    Color cardColor;
-    Color statusIconColor;
-    IconData statusIcon;
-
-    if (_hasActiveSession) {
-      // Active session - Green
-      cardColor = isDark ? Colors.green.shade900 : Colors.green.shade600;
-      statusIconColor = Colors.green;
-      statusIcon = Icons.radio_button_checked;
-    } else {
-      // Not started - Grey
-      cardColor = isDark ? AppColors.darkCard : Colors.grey.shade600;
-      statusIconColor = Colors.grey;
-      statusIcon = Icons.schedule;
-    }
+    // Only show if has active session
+    if (!_hasActiveSession) return const SizedBox.shrink();
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: cardColor,
+        color: isDark ? Colors.green.shade900 : Colors.green.shade600,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: isDark ? AppColors.borderDark : Colors.white.withOpacity(0.3),
@@ -420,7 +443,7 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
           BoxShadow(
             color: isDark
                 ? Colors.black.withOpacity(0.3)
-                : cardColor.withOpacity(0.3),
+                : Colors.green.withOpacity(0.3),
             blurRadius: 16,
             offset: const Offset(0, 6),
           ),
@@ -435,13 +458,13 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
                   color: isDark
-                      ? statusIconColor.withOpacity(0.2)
+                      ? Colors.green.withOpacity(0.2)
                       : Colors.white.withOpacity(0.25),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
-                  statusIcon,
-                  color: isDark ? statusIconColor : Colors.white,
+                  Icons.radio_button_checked,
+                  color: isDark ? Colors.green : Colors.white,
                   size: 24,
                 ),
               ),
@@ -597,6 +620,805 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
           ],
         ],
       ),
+    );
+  }
+
+  // OLD FUNCTION - TO BE DELETED
+  Widget _buildPersonilRosterOLD(bool isDark, List roster) {
+    if (roster.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.darkCard : Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isDark ? AppColors.borderDark : Colors.grey.shade200,
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: isDark
+                ? Colors.black.withOpacity(0.2)
+                : Colors.grey.withOpacity(0.1),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          // Fixed Header
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: isDark
+                  ? AppColors.darkPrimary.withOpacity(0.1)
+                  : AppColors.lightPrimary.withOpacity(0.05),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(20),
+                topRight: Radius.circular(20),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.people,
+                  color:
+                      isDark ? AppColors.darkPrimary : AppColors.lightPrimary,
+                  size: 24,
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  'Personil Bertugas',
+                  style: TextStyle(
+                    color: isDark
+                        ? AppColors.darkTextPrimary
+                        : AppColors.textPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const Spacer(),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color:
+                        isDark ? AppColors.darkPrimary : AppColors.lightPrimary,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '${roster.length}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Personil List
+          ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: roster.length,
+            separatorBuilder: (context, index) => Divider(
+              color: isDark ? AppColors.dividerDark : AppColors.dividerLight,
+              height: 1,
+              indent: 16,
+              endIndent: 16,
+            ),
+            itemBuilder: (context, index) {
+              final personil = roster[index];
+              final userId = personil['user_id'] ?? index;
+              final isExpanded = _expandedPersonil[userId] ?? false;
+
+              return _buildPersonilCardOLD(
+                  personil, isExpanded, isDark, userId);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  // OLD FUNCTION - TO BE DELETED
+  Widget _buildPersonilCardOLD(
+      Map<String, dynamic> personil, bool isExpanded, bool isDark, int userId) {
+    final name = personil['name'] ?? 'Unknown';
+    final pattern = personil['pattern'];
+    final patternName =
+        (pattern is Map && pattern['name'] != null) ? pattern['name'] : '-';
+    final checkInTime = personil['check_in_time'];
+    final posLocation = personil['pos_location'];
+    final isActive = personil['is_active'] ?? false;
+
+    return InkWell(
+      onTap: () {
+        // Navigate to personil detail
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => SecurityPersonilDetailScreen(
+              personil: {
+                ...personil,
+                'is_active': isActive,
+                'check_in_time': checkInTime,
+                'pos_location': posLocation,
+              },
+              securityService: _service,
+            ),
+          ),
+        );
+      },
+      child: Column(
+        children: [
+          // Main Card (Always Visible)
+          InkWell(
+            onTap: () {
+              setState(() {
+                _expandedPersonil[userId] = !isExpanded;
+              });
+            },
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  // Avatar
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isActive
+                          ? Colors.green.withOpacity(0.2)
+                          : (isDark
+                              ? AppColors.darkPrimary.withOpacity(0.2)
+                              : AppColors.lightPrimary.withOpacity(0.1)),
+                      border: Border.all(
+                        color: isActive
+                            ? Colors.green
+                            : (isDark
+                                ? AppColors.darkPrimary
+                                : AppColors.lightPrimary),
+                        width: 2,
+                      ),
+                    ),
+                    child: Center(
+                      child: Text(
+                        name[0].toUpperCase(),
+                        style: TextStyle(
+                          color: isActive
+                              ? Colors.green
+                              : (isDark
+                                  ? AppColors.darkPrimary
+                                  : AppColors.lightPrimary),
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+
+                  // Info
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Name (Highlighted)
+                        Text(
+                          name,
+                          style: TextStyle(
+                            color: isDark
+                                ? AppColors.darkTextPrimary
+                                : AppColors.textPrimary,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        // Pattern
+                        Text(
+                          patternName,
+                          style: TextStyle(
+                            color: isDark
+                                ? AppColors.darkTextSecondary
+                                : AppColors.textSecondary,
+                            fontSize: 13,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        // Status
+                        Row(
+                          children: [
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: isActive
+                                    ? Colors.green
+                                    : Colors.grey.shade400,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              isActive ? 'Sudah Check-in' : 'Belum Check-in',
+                              style: TextStyle(
+                                color: isActive
+                                    ? Colors.green
+                                    : Colors.grey.shade600,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            if (isActive && checkInTime != null) ...[
+                              const SizedBox(width: 8),
+                              Text(
+                                '• $checkInTime',
+                                style: TextStyle(
+                                  color: isDark
+                                      ? AppColors.darkTextSecondary
+                                      : AppColors.textSecondary,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                        // Pos Location (if checked in - highlighted)
+                        if (isActive && posLocation != null) ...[
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.location_on,
+                                size: 14,
+                                color: Colors.green,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                posLocation,
+                                style: TextStyle(
+                                  color: Colors.green,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+
+                  // Expand Icon
+                  Icon(
+                    isExpanded
+                        ? Icons.keyboard_arrow_up
+                        : Icons.keyboard_arrow_down,
+                    color: isDark
+                        ? AppColors.darkTextSecondary
+                        : AppColors.textSecondary,
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // Expanded Content (Duration Progress)
+          if (isExpanded && isActive)
+            Container(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Column(
+                children: [
+                  Divider(
+                    color:
+                        isDark ? AppColors.dividerDark : AppColors.dividerLight,
+                    height: 1,
+                  ),
+                  const SizedBox(height: 12),
+                  _buildDurationProgressOLD(personil, isDark),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // OLD FUNCTION - TO BE DELETED
+  Widget _buildDurationProgressOLD(Map<String, dynamic> personil, bool isDark) {
+    // Calculate duration (mock for now)
+    final checkInTime = personil['check_in_time'] ?? '00:00';
+    final now = DateTime.now();
+
+    // Parse check-in time
+    final checkInParts = checkInTime.split(':');
+    final checkInDateTime = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      int.tryParse(checkInParts[0]) ?? 0,
+      int.tryParse(checkInParts[1]) ?? 0,
+    );
+
+    final duration = now.difference(checkInDateTime);
+    final hours = duration.inHours;
+    final minutes = duration.inMinutes % 60;
+
+    // Expected shift duration (8 hours)
+    const shiftDurationHours = 8;
+    final progress = (hours / shiftDurationHours).clamp(0.0, 1.0);
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: isDark
+            ? Colors.green.shade900.withOpacity(0.2)
+            : Colors.green.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isDark
+              ? Colors.green.shade700.withOpacity(0.3)
+              : Colors.green.shade200,
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    Icons.access_time,
+                    size: 16,
+                    color:
+                        isDark ? Colors.green.shade300 : Colors.green.shade700,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Durasi Shift',
+                    style: TextStyle(
+                      color: isDark
+                          ? Colors.green.shade200
+                          : Colors.green.shade700,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+              Text(
+                '${hours}j ${minutes}m',
+                style: TextStyle(
+                  color: isDark ? Colors.green.shade100 : Colors.green.shade900,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          // Progress Bar
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: LinearProgressIndicator(
+              value: progress,
+              backgroundColor:
+                  isDark ? Colors.grey.shade800 : Colors.grey.shade300,
+              valueColor: AlwaysStoppedAnimation<Color>(
+                isDark ? Colors.green.shade400 : Colors.green.shade600,
+              ),
+              minHeight: 8,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '${(progress * 100).toInt()}% dari target 8 jam',
+            style: TextStyle(
+              color: isDark
+                  ? AppColors.darkTextSecondary
+                  : AppColors.textSecondary,
+              fontSize: 11,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPersonilRoster(bool isDark, List roster) {
+    if (roster.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Header
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? AppColors.darkPrimary.withOpacity(0.2)
+                      : AppColors.lightPrimary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  Icons.people,
+                  color:
+                      isDark ? AppColors.darkPrimary : AppColors.lightPrimary,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Personil Bertugas',
+                style: TextStyle(
+                  color: isDark
+                      ? AppColors.darkTextPrimary
+                      : AppColors.textPrimary,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? AppColors.darkPrimary.withOpacity(0.2)
+                      : AppColors.lightPrimary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color:
+                        isDark ? AppColors.darkPrimary : AppColors.lightPrimary,
+                    width: 1.5,
+                  ),
+                ),
+                child: Text(
+                  '${roster.length} Orang',
+                  style: TextStyle(
+                    color:
+                        isDark ? AppColors.darkPrimary : AppColors.lightPrimary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // Horizontal Scrollable Cards
+        SizedBox(
+          height: 110,
+          child: ListView.builder(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            itemCount: roster.length,
+            itemBuilder: (context, index) {
+              final personil = roster[index];
+              final isActive = personil['is_active'] ?? false;
+              final name = personil['name'] ?? 'Unknown';
+              final checkInTime = personil['check_in_time'];
+              final pattern = personil['pattern'];
+              final patternName = (pattern is Map && pattern['name'] != null)
+                  ? pattern['name']
+                  : '-';
+              final posLocation = personil['pos_location'] ??
+                  (widget.sessionData['pos']?['name'] ?? 'Pos Security');
+
+              return GestureDetector(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => SecurityPersonilDetailScreen(
+                        personil: {
+                          ...personil,
+                          'is_active': isActive,
+                          'check_in_time': checkInTime,
+                          'pos_location': posLocation,
+                        },
+                        securityService: _service,
+                      ),
+                    ),
+                  );
+                },
+                child: Container(
+                  width: 280,
+                  margin: const EdgeInsets.only(right: 12, bottom: 4),
+                  decoration: BoxDecoration(
+                    gradient: isActive
+                        ? LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              Colors.green.shade600,
+                              Colors.green.shade700,
+                            ],
+                          )
+                        : LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: isDark
+                                ? [
+                                    AppColors.darkCard,
+                                    AppColors.darkCard,
+                                  ]
+                                : [
+                                    Colors.white,
+                                    Colors.grey.shade50,
+                                  ],
+                          ),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: isActive
+                          ? Colors.green.shade400
+                          : (isDark
+                              ? AppColors.borderDark
+                              : Colors.grey.shade200),
+                      width: isActive ? 2 : 1,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: isActive
+                            ? Colors.green.withOpacity(0.3)
+                            : (isDark
+                                ? Colors.black.withOpacity(0.2)
+                                : Colors.grey.withOpacity(0.15)),
+                        blurRadius: isActive ? 12 : 8,
+                        offset: const Offset(0, 4),
+                        spreadRadius: isActive ? 1 : 0,
+                      ),
+                    ],
+                  ),
+                  child: Stack(
+                    children: [
+                      // Main Content - Horizontal Layout
+                      Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Row(
+                          children: [
+                            // Avatar with active ring
+                            Container(
+                              padding: const EdgeInsets.all(2),
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: isActive
+                                    ? LinearGradient(
+                                        colors: [
+                                          Colors.greenAccent.shade400,
+                                          Colors.green.shade300,
+                                        ],
+                                      )
+                                    : null,
+                                boxShadow: isActive
+                                    ? [
+                                        BoxShadow(
+                                          color: Colors.greenAccent
+                                              .withOpacity(0.4),
+                                          blurRadius: 8,
+                                          spreadRadius: 1,
+                                        ),
+                                      ]
+                                    : null,
+                              ),
+                              child: Container(
+                                width: 56,
+                                height: 56,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: isActive
+                                      ? Colors.white
+                                      : (isDark
+                                          ? AppColors.darkPrimary
+                                              .withOpacity(0.2)
+                                          : AppColors.lightPrimary
+                                              .withOpacity(0.1)),
+                                  border: Border.all(
+                                    color: isActive
+                                        ? Colors.white
+                                        : (isDark
+                                            ? AppColors.darkPrimary
+                                            : AppColors.lightPrimary),
+                                    width: 2,
+                                  ),
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    name[0].toUpperCase(),
+                                    style: TextStyle(
+                                      color: isActive
+                                          ? Colors.green.shade700
+                                          : (isDark
+                                              ? AppColors.darkPrimary
+                                              : AppColors.lightPrimary),
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+
+                            // Info Section
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  // Name
+                                  Text(
+                                    name,
+                                    style: TextStyle(
+                                      color: isActive
+                                          ? Colors.white
+                                          : (isDark
+                                              ? AppColors.darkTextPrimary
+                                              : AppColors.textPrimary),
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 4),
+
+                                  // Pattern
+                                  Text(
+                                    patternName,
+                                    style: TextStyle(
+                                      color: isActive
+                                          ? Colors.white.withOpacity(0.85)
+                                          : (isDark
+                                              ? AppColors.darkTextSecondary
+                                              : AppColors.textSecondary),
+                                      fontSize: 12,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 6),
+
+                                  // Location
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        Icons.location_on,
+                                        size: 12,
+                                        color: isActive
+                                            ? Colors.white.withOpacity(0.9)
+                                            : (isDark
+                                                ? AppColors.darkTextSecondary
+                                                : AppColors.textSecondary),
+                                      ),
+                                      const SizedBox(width: 3),
+                                      Expanded(
+                                        child: Text(
+                                          posLocation,
+                                          style: TextStyle(
+                                            color: isActive
+                                                ? Colors.white.withOpacity(0.9)
+                                                : (isDark
+                                                    ? AppColors
+                                                        .darkTextSecondary
+                                                    : AppColors.textSecondary),
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+
+                                  // Check-in Time (if active)
+                                  if (isActive && checkInTime != null) ...[
+                                    const SizedBox(height: 4),
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          Icons.access_time,
+                                          size: 12,
+                                          color: Colors.white.withOpacity(0.9),
+                                        ),
+                                        const SizedBox(width: 3),
+                                        Text(
+                                          checkInTime,
+                                          style: TextStyle(
+                                            color:
+                                                Colors.white.withOpacity(0.9),
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      // Active Indicator Badge (Top Right)
+                      if (isActive)
+                        Positioned(
+                          top: 8,
+                          right: 8,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.1),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 6,
+                                  height: 6,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: Colors.green.shade600,
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.green.withOpacity(0.5),
+                                        blurRadius: 4,
+                                        spreadRadius: 1,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'AKTIF',
+                                  style: TextStyle(
+                                    color: Colors.green.shade700,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 12),
+      ],
     );
   }
 
@@ -1097,8 +1919,16 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
 
   Future<void> _selectPersonil() async {
     final roster = widget.sessionData['roster'] as List?;
+
+    // Debug logging
+    print('=== DEBUG ROSTER ===');
+    print('SessionData keys: ${widget.sessionData.keys.toList()}');
+    print('Roster data: $roster');
+    print('Roster length: ${roster?.length ?? 0}');
+    print('===================');
+
     if (roster == null || roster.isEmpty) {
-      AppToast.warning('Tidak ada roster');
+      AppToast.warning('Belum ada jadwal personil hari ini');
       return;
     }
 
@@ -1151,9 +1981,15 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
     );
 
     if (selected != null) {
-      setState(() => _selectedPersonil = selected);
+      setState(() {
+        _selectedPersonil = selected;
+        _checkInTime = DateFormat('HH:mm').format(DateTime.now());
+      });
       if (!_hasActiveSession) {
         await _handleStartSession();
+      } else {
+        // Update active personil in roster
+        _markActivePersonil();
       }
     }
   }
@@ -1177,6 +2013,7 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
         _hasActiveSession = true;
         widget.sessionData.addAll(result);
         _updateStatusFromSession();
+        _markActivePersonil();
       });
 
       AppToast.success('✓ Sesi dimulai');

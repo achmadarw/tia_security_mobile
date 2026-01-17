@@ -80,7 +80,7 @@ class AppToast {
 
     Widget toast = Container(
       padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 14.0),
-      margin: const EdgeInsets.only(bottom: 80.0), // Above bottom navigation
+      margin: const EdgeInsets.only(top: 100.0), // Below header
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16.0),
         color: backgroundColor,
@@ -133,7 +133,7 @@ class AppToast {
 
     _fToast!.showToast(
       child: toast,
-      gravity: ToastGravity.BOTTOM,
+      gravity: ToastGravity.TOP,
       toastDuration: Duration(seconds: durationSeconds),
     );
   }
