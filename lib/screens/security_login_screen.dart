@@ -1,31 +1,33 @@
 import 'package:flutter/material.dart';
 import 'dart:ui';
+import '../services/security_app_service.dart';
 import '../services/auth_service.dart';
 import '../config/theme.dart';
-import '../widgets/error_widgets.dart';
-import 'home_screen.dart';
-import 'face_login_screen.dart';
-import 'register_screen.dart';
+import 'security_home_screen.dart';
 
-class LoginScreen extends StatefulWidget {
-  final AuthService authService;
-
-  const LoginScreen({super.key, required this.authService});
+/// Security Login Screen
+/// Pos-based login for security guards with modern glassmorphism UI
+class SecurityLoginScreen extends StatefulWidget {
+  const SecurityLoginScreen({Key? key}) : super(key: key);
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  State<SecurityLoginScreen> createState() => _SecurityLoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen>
+class _SecurityLoginScreenState extends State<SecurityLoginScreen>
     with SingleTickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
-  final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
+
+  String? _selectedPosCode;
   bool _isLoading = false;
   bool _obscurePassword = true;
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
+
+  // Available pos codes (could be fetched from API in production)
+  final List<String> _posCodes = ['pos1', 'pos2', 'pos3'];
 
   @override
   void initState() {
@@ -49,56 +51,50 @@ class _LoginScreenState extends State<LoginScreen>
   @override
   void dispose() {
     _animationController.dispose();
-    _phoneController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
 
-  Future<void> _login() async {
+  Future<void> _handleLogin() async {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
 
-    final result = await widget.authService.login(
-      _phoneController.text.trim(),
-      _passwordController.text,
-    );
+    try {
+      final result = await SecurityAppService.loginToPos(
+        posCode: _selectedPosCode!,
+        password: _passwordController.text,
+      );
 
-    setState(() => _isLoading = false);
+      if (!mounted) return;
 
-    if (!mounted) return;
-
-    if (result['success']) {
-      Navigator.of(context).pushReplacement(
+      // Navigate directly to home screen with pos data and roster
+      Navigator.pushReplacement(
+        context,
         MaterialPageRoute(
-          builder: (context) => HomeScreen(authService: widget.authService),
+          builder: (context) => SecurityHomeScreen(
+            sessionData: {
+              'pos_token': result['pos_token'],
+              'pos': result['pos'],
+              'roster': result['roster'],
+            },
+            authService: AuthService(),
+          ),
         ),
       );
-    } else {
-      ErrorSnackBar.show(
-        context,
-        result['error'] ?? 'Login gagal',
-        onRetry: _login,
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() => _isLoading = false);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceAll('Exception: ', '')),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
+        ),
       );
     }
-  }
-
-  void _navigateToFaceLogin() {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => FaceLoginScreen(
-          authService: widget.authService,
-        ),
-      ),
-    );
-  }
-
-  void _navigateToRegister() {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => RegisterScreen(authService: widget.authService),
-      ),
-    );
   }
 
   @override
@@ -135,12 +131,8 @@ class _LoginScreenState extends State<LoginScreen>
                       _buildLoginForm(),
                       const SizedBox(height: 24),
 
-                      // Face Login Button
-                      _buildFaceLoginButton(),
-                      const SizedBox(height: 16),
-
-                      // Register Link
-                      // _buildRegisterLink(),
+                      // Info hint
+                      _buildInfoHint(),
                     ],
                   ),
                 ),
@@ -178,7 +170,7 @@ class _LoginScreenState extends State<LoginScreen>
                   color: Colors.white.withOpacity(0.1),
                 ),
                 child: const Icon(
-                  Icons.home_work,
+                  Icons.security,
                   size: 80,
                   color: Colors.white,
                 ),
@@ -188,7 +180,7 @@ class _LoginScreenState extends State<LoginScreen>
         ),
         const SizedBox(height: 24),
         const Text(
-          'TIA Community',
+          'TIA Security',
           style: TextStyle(
             fontSize: 36,
             fontWeight: FontWeight.bold,
@@ -198,7 +190,7 @@ class _LoginScreenState extends State<LoginScreen>
         ),
         const SizedBox(height: 8),
         Text(
-          'Portal Warga & Manajemen',
+          'Untuk Security Guards',
           style: TextStyle(
             fontSize: 16,
             color: Colors.white.withOpacity(0.9),
@@ -228,16 +220,17 @@ class _LoginScreenState extends State<LoginScreen>
             key: _formKey,
             child: Column(
               children: [
-                // Phone Field
-                TextFormField(
-                  controller: _phoneController,
-                  keyboardType: TextInputType.phone,
+                // Pos Code Dropdown
+                DropdownButtonFormField<String>(
+                  value: _selectedPosCode,
+                  dropdownColor: AppColors.primary.withOpacity(0.95),
                   style: const TextStyle(color: Colors.white),
                   decoration: InputDecoration(
-                    labelText: 'Nomor Telepon',
+                    labelText: 'Pilih Kode Pos',
                     labelStyle: TextStyle(color: Colors.white.withOpacity(0.9)),
-                    prefixIcon: const Icon(Icons.phone, color: Colors.white70),
-                    hintText: '081234567890',
+                    prefixIcon:
+                        const Icon(Icons.location_on, color: Colors.white70),
+                    hintText: 'pos1, pos2, pos3',
                     hintStyle: TextStyle(color: Colors.white.withOpacity(0.5)),
                     filled: true,
                     fillColor: Colors.white.withOpacity(0.1),
@@ -259,9 +252,21 @@ class _LoginScreenState extends State<LoginScreen>
                       ),
                     ),
                   ),
+                  items: _posCodes.map((code) {
+                    return DropdownMenuItem(
+                      value: code,
+                      child: Text(
+                        code.toUpperCase(),
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    setState(() => _selectedPosCode = value);
+                  },
                   validator: (value) {
                     if (value == null || value.isEmpty) {
-                      return 'Nomor telepon harus diisi';
+                      return 'Pilih kode pos terlebih dahulu';
                     }
                     return null;
                   },
@@ -274,7 +279,7 @@ class _LoginScreenState extends State<LoginScreen>
                   obscureText: _obscurePassword,
                   style: const TextStyle(color: Colors.white),
                   decoration: InputDecoration(
-                    labelText: 'Password',
+                    labelText: 'Password Pos',
                     labelStyle: TextStyle(color: Colors.white.withOpacity(0.9)),
                     prefixIcon: const Icon(Icons.lock, color: Colors.white70),
                     suffixIcon: IconButton(
@@ -322,7 +327,7 @@ class _LoginScreenState extends State<LoginScreen>
                   width: double.infinity,
                   height: 54,
                   child: ElevatedButton(
-                    onPressed: _isLoading ? null : _login,
+                    onPressed: _isLoading ? null : _handleLogin,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.white,
                       foregroundColor: AppColors.primary,
@@ -359,52 +364,41 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
-  Widget _buildFaceLoginButton() {
-    return OutlinedButton.icon(
-      onPressed: _navigateToFaceLogin,
-      icon: const Icon(Icons.face, color: Colors.white),
-      label: const Text(
-        'LOGIN DENGAN WAJAH',
-        style: TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 1,
-        ),
-      ),
-      style: OutlinedButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-        side: const BorderSide(color: Colors.white, width: 2),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildRegisterLink() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Text(
-          'Belum punya akun?',
-          style: TextStyle(
-            color: Colors.white.withOpacity(0.9),
-            fontSize: 15,
-          ),
-        ),
-        TextButton(
-          onPressed: _navigateToRegister,
-          child: const Text(
-            'Daftar Sekarang',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 15,
-              fontWeight: FontWeight.bold,
-              decoration: TextDecoration.underline,
+  Widget _buildInfoHint() {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: Colors.white.withOpacity(0.2),
             ),
           ),
+          child: Row(
+            children: [
+              const Icon(
+                Icons.info_outline,
+                color: Colors.white70,
+                size: 20,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Login menggunakan kode pos dan password yang diberikan',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.9),
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
-      ],
+      ),
     );
   }
 }
