@@ -1266,7 +1266,7 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
                       // Main Content - Horizontal Layout
                       Padding(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 10),
+                            horizontal: 12, vertical: 7),
                         child: Row(
                           children: [
                             // Avatar with active ring
@@ -1338,33 +1338,33 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  // Name & Shift Badge Row
+                                  // Name Only
+                                  Text(
+                                    name,
+                                    style: TextStyle(
+                                      color: isActive
+                                          ? Colors.white
+                                          : (isDark
+                                              ? AppColors.darkTextPrimary
+                                              : AppColors.textPrimary),
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 2),
+
+                                  // Badge Shift + Status Login Row
                                   Row(
                                     children: [
-                                      Expanded(
-                                        child: Text(
-                                          name,
-                                          style: TextStyle(
-                                            color: isActive
-                                                ? Colors.white
-                                                : (isDark
-                                                    ? AppColors.darkTextPrimary
-                                                    : AppColors.textPrimary),
-                                            fontSize: 15,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
                                       if (shiftName.isNotEmpty) ...[
-                                        const SizedBox(width: 6),
                                         Container(
                                           padding: const EdgeInsets.symmetric(
-                                              horizontal: 6, vertical: 2),
+                                              horizontal: 7, vertical: 3),
                                           decoration: BoxDecoration(
                                             color: isActive
-                                                ? Colors.white.withOpacity(0.3)
+                                                ? Colors.white.withOpacity(0.25)
                                                 : shiftBgColor,
                                             borderRadius:
                                                 BorderRadius.circular(6),
@@ -1384,20 +1384,91 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
                                                   : shiftColor,
                                               fontSize: 9,
                                               fontWeight: FontWeight.w700,
-                                              letterSpacing: 0.2,
+                                              letterSpacing: 0.3,
                                             ),
                                           ),
                                         ),
+                                        const SizedBox(width: 6),
+                                        // Bullet separator
+                                        Text(
+                                          '·',
+                                          style: TextStyle(
+                                            color: isActive
+                                                ? Colors.white.withOpacity(0.6)
+                                                : (isDark
+                                                    ? AppColors
+                                                        .darkTextSecondary
+                                                    : AppColors.textSecondary),
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 6),
                                       ],
+                                      // Status Login Indicator
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 7, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: isActive
+                                              ? Colors.green.withOpacity(0.2)
+                                              : Colors.grey.withOpacity(0.15),
+                                          borderRadius:
+                                              BorderRadius.circular(6),
+                                          border: Border.all(
+                                            color: isActive
+                                                ? Colors.green.withOpacity(0.4)
+                                                : Colors.grey.withOpacity(0.3),
+                                            width: 0.5,
+                                          ),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Container(
+                                              width: 5,
+                                              height: 5,
+                                              decoration: BoxDecoration(
+                                                color: isActive
+                                                    ? Colors.green
+                                                    : Colors.grey,
+                                                shape: BoxShape.circle,
+                                                boxShadow: isActive
+                                                    ? [
+                                                        BoxShadow(
+                                                          color: Colors.green
+                                                              .withOpacity(0.5),
+                                                          blurRadius: 4,
+                                                          spreadRadius: 1,
+                                                        )
+                                                      ]
+                                                    : null,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              isActive ? 'Login' : 'Offline',
+                                              style: TextStyle(
+                                                color: isActive
+                                                    ? Colors.green.shade700
+                                                    : Colors.grey.shade600,
+                                                fontSize: 9,
+                                                fontWeight: FontWeight.w700,
+                                                letterSpacing: 0.2,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
                                     ],
                                   ),
-                                  const SizedBox(height: 3),
+                                  const SizedBox(height: 4),
 
                                   // Shift Time (if available)
                                   if (shiftStartTime.isNotEmpty &&
                                       shiftEndTime.isNotEmpty)
                                     Padding(
-                                      padding: const EdgeInsets.only(bottom: 3),
+                                      padding: const EdgeInsets.only(bottom: 2),
                                       child: Row(
                                         children: [
                                           Icon(
@@ -1454,66 +1525,10 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
                                                         .darkTextSecondary
                                                     : AppColors.textSecondary),
                                             fontSize: 11,
-                                            fontWeight: FontWeight.w500,
+                                            fontWeight: FontWeight.w600,
                                           ),
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 6),
-                                      // Status Login Indicator
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 6, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: isActive
-                                              ? Colors.green.withOpacity(0.2)
-                                              : Colors.grey.withOpacity(0.15),
-                                          borderRadius:
-                                              BorderRadius.circular(8),
-                                          border: Border.all(
-                                            color: isActive
-                                                ? Colors.green.withOpacity(0.4)
-                                                : Colors.grey.withOpacity(0.3),
-                                            width: 0.5,
-                                          ),
-                                        ),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Container(
-                                              width: 5,
-                                              height: 5,
-                                              decoration: BoxDecoration(
-                                                color: isActive
-                                                    ? Colors.green
-                                                    : Colors.grey,
-                                                shape: BoxShape.circle,
-                                                boxShadow: isActive
-                                                    ? [
-                                                        BoxShadow(
-                                                          color: Colors.green
-                                                              .withOpacity(0.5),
-                                                          blurRadius: 4,
-                                                          spreadRadius: 1,
-                                                        )
-                                                      ]
-                                                    : null,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 4),
-                                            Text(
-                                              isActive ? 'Login' : 'Offline',
-                                              style: TextStyle(
-                                                color: isActive
-                                                    ? Colors.green.shade700
-                                                    : Colors.grey.shade600,
-                                                fontSize: 8,
-                                                fontWeight: FontWeight.w700,
-                                                letterSpacing: 0.2,
-                                              ),
-                                            ),
-                                          ],
                                         ),
                                       ),
                                     ],
@@ -1521,7 +1536,7 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
 
                                   // Check-in Time (if active)
                                   if (isActive && checkInTime != null) ...[
-                                    const SizedBox(height: 4),
+                                    const SizedBox(height: 3),
                                     Row(
                                       children: [
                                         Icon(
@@ -1882,7 +1897,7 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
             height: 64,
             alignment: Alignment.center,
             child: Icon(
-              Icons.camera_alt,
+              Icons.face,
               size: 30,
               weight: 600,
               color: isDark ? AppColors.darkPrimary : AppColors.lightPrimary,
