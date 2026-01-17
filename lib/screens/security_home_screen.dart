@@ -5,9 +5,11 @@ import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:ui';
 import '../services/security_app_service.dart';
+import '../utils/app_toast.dart';
 import '../services/auth_service.dart';
 import '../config/theme.dart';
 import 'app_selector_screen.dart';
+import 'security_checkin_screen.dart';
 
 /// Security Home Screen V3
 /// Modern redesign matching community app UI/UX
@@ -130,6 +132,9 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
 
   @override
   Widget build(BuildContext context) {
+    // Initialize toast
+    AppToast.init(context);
+
     final pos = widget.sessionData['pos'] ?? {};
     final roster = widget.sessionData['roster'] ?? [];
     final now = DateTime.now();
@@ -148,9 +153,10 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      extendBody:
-          true, // Body extends behind BottomAppBar - notch jadi transparan!
+      extendBody: true,
       extendBodyBehindAppBar: true,
+      floatingActionButtonAnimator:
+          null, // Disable FAB animation when SnackBar shows
       body: RefreshIndicator(
         onRefresh: () async {
           await _loadTodayTimeline();
@@ -294,10 +300,7 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
                   _buildHeaderIconButton(
                     Icons.notifications_outlined,
                     () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                            content: Text('Notifikasi - Segera Hadir')),
-                      );
+                      AppToast.info('Notifikasi - Segera Hadir');
                     },
                     isDark: isDark,
                     badge: '3',
@@ -757,10 +760,7 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
                   label: 'Mulai Patrol',
                   color: Colors.blue,
                   onTap: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                          content: Text('Fitur Patrol - Segera Hadir')),
-                    );
+                    AppToast.info('Fitur Patrol - Segera Hadir');
                   },
                   enabled: _hasActiveSession,
                   isDark: isDark,
@@ -860,12 +860,7 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
           customBorder: const CircleBorder(),
           onTap: () {
             if (!_hasActiveSession) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Pilih personil terlebih dahulu'),
-                  backgroundColor: Colors.orange,
-                ),
-              );
+              AppToast.warning('Pilih personil terlebih dahulu');
               return;
             }
             _handleCheckIn();
@@ -1103,10 +1098,7 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
   Future<void> _selectPersonil() async {
     final roster = widget.sessionData['roster'] as List?;
     if (roster == null || roster.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Tidak ada roster'), backgroundColor: Colors.orange),
-      );
+      AppToast.warning('Tidak ada roster');
       return;
     }
 
@@ -1187,14 +1179,9 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
         _updateStatusFromSession();
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('✓ Sesi dimulai'), backgroundColor: Colors.green),
-      );
+      AppToast.success('✓ Sesi dimulai');
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Gagal: $e'), backgroundColor: Colors.red),
-      );
+      AppToast.error('Gagal: $e');
     }
   }
 
@@ -1217,93 +1204,52 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
 
   Future<void> _handleCheckIn() async {
     if (!_hasActiveSession) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Pilih personil dulu'),
-            backgroundColor: Colors.orange),
-      );
+      AppToast.warning('Pilih personil dulu');
       return;
     }
 
-    try {
-      // Take photo
-      final photo = await _imagePicker.pickImage(
-        source: ImageSource.camera,
-        preferredCameraDevice: CameraDevice.front,
-      );
-      if (photo == null) return;
+    // Navigate to SecurityCheckinScreen with face recognition
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => SecurityCheckinScreen(
+          securityService: _service,
+          isCheckOut: false,
+        ),
+      ),
+    );
 
-      // Get GPS
-      final position = await _getCurrentLocation();
-
-      // TODO: Upload photo, then check-in with photo ID
-      await _service.checkIn(
-        latitude: position.latitude,
-        longitude: position.longitude,
-      );
-
+    // Refresh timeline if check-in successful
+    if (result == true && mounted) {
       await _loadTodayTimeline();
-
-      if (mounted) {
-        setState(() {
-          _checkInTime = DateFormat('HH:mm').format(DateTime.now());
-          _statusText = 'Shift Aktif';
-        });
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('✓ Check-in berhasil'),
-              backgroundColor: Colors.green),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('Check-in gagal: $e'), backgroundColor: Colors.red),
-        );
-      }
+      setState(() {
+        _checkInTime = DateFormat('HH:mm').format(DateTime.now());
+        _statusText = 'Shift Aktif';
+      });
     }
   }
 
   Future<void> _handleCheckOut() async {
     if (!_hasActiveSession) return;
 
-    try {
-      final photo = await _imagePicker.pickImage(
-        source: ImageSource.camera,
-        preferredCameraDevice: CameraDevice.front,
-      );
-      if (photo == null) return;
+    // Navigate to SecurityCheckinScreen with face recognition for checkout
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => SecurityCheckinScreen(
+          securityService: _service,
+          isCheckOut: true,
+        ),
+      ),
+    );
 
-      final position = await _getCurrentLocation();
-
-      await _service.checkOut(
-        latitude: position.latitude,
-        longitude: position.longitude,
-      );
-
+    // Refresh timeline if check-out successful
+    if (result == true && mounted) {
       await _loadTodayTimeline();
-
-      if (mounted) {
-        setState(() {
-          _checkOutTime = DateFormat('HH:mm').format(DateTime.now());
-        });
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('✓ Check-out berhasil'),
-              backgroundColor: Colors.green),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('Check-out gagal: $e'),
-              backgroundColor: Colors.red),
-        );
-      }
+      setState(() {
+        _checkOutTime = DateFormat('HH:mm').format(DateTime.now());
+        _statusText = 'Shift Selesai';
+      });
     }
   }
 
