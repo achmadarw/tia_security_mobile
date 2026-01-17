@@ -9,8 +9,8 @@ import '../services/auth_service.dart';
 import '../config/theme.dart';
 import 'app_selector_screen.dart';
 
-/// Security Home Screen V2
-/// Flexible interface for multiple security with check-in/check-out
+/// Security Home Screen V3
+/// Modern redesign matching community app UI/UX
 class SecurityHomeScreen extends StatefulWidget {
   final Map<String, dynamic> sessionData;
   final AuthService? authService;
@@ -25,17 +25,50 @@ class SecurityHomeScreen extends StatefulWidget {
   State<SecurityHomeScreen> createState() => _SecurityHomeScreenState();
 }
 
-class _SecurityHomeScreenState extends State<SecurityHomeScreen> {
+class _SecurityHomeScreenState extends State<SecurityHomeScreen>
+    with TickerProviderStateMixin {
   Map<String, dynamic>? _selectedPersonil;
   bool _hasActiveSession = false;
   List<Map<String, dynamic>> _todayTimeline = [];
+  String _statusText = 'Belum Check-in';
+  int _selectedIndex = 0;
+  String _checkInTime = '--:--';
+  String _checkOutTime = '--:--';
+  String _currentDuration = '--';
+  int _totalCheckIns = 0;
+  int _totalPatrols = 0;
 
   final SecurityAppService _service = SecurityAppService();
   final ImagePicker _imagePicker = ImagePicker();
 
+  late AnimationController _fadeController;
+  late AnimationController _scaleController;
+  late Animation<double> _fadeAnimation;
+  late Animation<double> _scaleAnimation;
+
   @override
   void initState() {
     super.initState();
+
+    // Animations
+    _fadeController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+    _scaleController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    _fadeAnimation = CurvedAnimation(
+      parent: _fadeController,
+      curve: Curves.easeIn,
+    );
+    _scaleAnimation = CurvedAnimation(
+      parent: _scaleController,
+      curve: Curves.elasticOut,
+    );
+    _fadeController.forward();
+    _scaleController.forward();
 
     // Check if coming from session restore
     if (widget.sessionData.containsKey('user')) {
@@ -50,14 +83,1009 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen> {
           _selectedPersonil!['pattern'] = widget.sessionData['pattern'];
         }
       }
+
+      _updateStatusFromSession();
     }
 
     _loadTodayTimeline();
   }
 
-  Future<void> _loadTodayTimeline() async {
-    // TODO: Load today's check-in/check-out timeline
+  void _updateStatusFromSession() {
+    if (!_hasActiveSession) {
+      _statusText = 'Belum Check-in';
+      _checkInTime = '--:--';
+      _checkOutTime = '--:--';
+      _currentDuration = '--';
+    } else {
+      _statusText = 'Shift Aktif';
+      // TODO: Load actual check-in time from backend
+      _checkInTime = DateFormat('HH:mm').format(DateTime.now());
+      _checkOutTime = '--:--';
+      _currentDuration = '0j 0m';
+    }
   }
+
+  Future<void> _loadTodayTimeline() async {
+    // TODO: Load today's check-in/check-out timeline from backend
+    setState(() {
+      _totalCheckIns = _todayTimeline.length;
+      _totalPatrols = 0; // TODO: Load from backend
+    });
+  }
+
+  @override
+  void dispose() {
+    _fadeController.dispose();
+    _scaleController.dispose();
+    super.dispose();
+  }
+
+  String _getGreeting() {
+    final hour = DateTime.now().hour;
+    if (hour < 12) return 'Selamat Pagi';
+    if (hour < 15) return 'Selamat Siang';
+    if (hour < 18) return 'Selamat Sore';
+    return 'Selamat Malam';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pos = widget.sessionData['pos'] ?? {};
+    final roster = widget.sessionData['roster'] ?? [];
+    final now = DateTime.now();
+    final greeting = _getGreeting();
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    // Set status bar color to match header
+    SystemChrome.setSystemUIOverlayStyle(
+      SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: isDark ? Brightness.light : Brightness.light,
+        statusBarBrightness: isDark ? Brightness.dark : Brightness.dark,
+      ),
+    );
+
+    return Scaffold(
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      extendBodyBehindAppBar: true,
+      body: RefreshIndicator(
+        onRefresh: () async {
+          await _loadTodayTimeline();
+        },
+        child: CustomScrollView(
+          physics: const BouncingScrollPhysics(),
+          slivers: [
+            // Modern Header
+            SliverToBoxAdapter(
+              child: _buildModernHeader(greeting, now, isDark, pos),
+            ),
+
+            // Status Card
+            SliverToBoxAdapter(
+              child: FadeTransition(
+                opacity: _fadeAnimation,
+                child: ScaleTransition(
+                  scale: _scaleAnimation,
+                  child: _buildStatusCard(isDark),
+                ),
+              ),
+            ),
+
+            // Quick Stats
+            SliverToBoxAdapter(
+              child: FadeTransition(
+                opacity: _fadeAnimation,
+                child: _buildQuickStats(isDark),
+              ),
+            ),
+
+            // Quick Actions
+            SliverToBoxAdapter(
+              child: _buildQuickActions(isDark),
+            ),
+
+            const SliverToBoxAdapter(child: SizedBox(height: 100)),
+          ],
+        ),
+      ),
+      floatingActionButton: _buildFloatingActionButton(),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+      bottomNavigationBar: _buildBottomNavBar(),
+    );
+  }
+
+  Widget _buildModernHeader(
+      String greeting, DateTime now, bool isDark, Map<String, dynamic> pos) {
+    final topPadding = MediaQuery.of(context).padding.top;
+
+    return Container(
+      padding: EdgeInsets.fromLTRB(20, topPadding + 16, 20, 24),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.darkSurface : AppColors.lightPrimary,
+        borderRadius: const BorderRadius.only(
+          bottomLeft: Radius.circular(24),
+          bottomRight: Radius.circular(24),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Hero(
+                    tag: 'user_avatar',
+                    child: Container(
+                      padding: const EdgeInsets.all(3),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.1),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: CircleAvatar(
+                        radius: 28,
+                        backgroundColor: isDark
+                            ? AppColors.darkPrimary
+                            : AppColors.lightPrimaryLight,
+                        child: Text(
+                          _selectedPersonil != null
+                              ? _selectedPersonil!['name']
+                                  .toString()[0]
+                                  .toUpperCase()
+                              : 'S',
+                          style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: isDark ? Colors.black : Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        (pos is Map && pos['name'] != null)
+                            ? pos['name']
+                            : 'Pos Security',
+                        style: TextStyle(
+                          color: isDark
+                              ? AppColors.darkTextSecondary
+                              : Colors.white70,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        _selectedPersonil != null
+                            ? _selectedPersonil!['name']
+                            : 'Pilih Personil',
+                        style: TextStyle(
+                          color:
+                              isDark ? AppColors.darkTextPrimary : Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              Row(
+                children: [
+                  _buildHeaderIconButton(
+                    Icons.notifications_outlined,
+                    () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                            content: Text('Notifikasi - Segera Hadir')),
+                      );
+                    },
+                    isDark: isDark,
+                    badge: '3',
+                  ),
+                  const SizedBox(width: 4),
+                  _buildHeaderIconButton(
+                    Icons.settings_outlined,
+                    () => _showSettingsMenu(context),
+                    isDark: isDark,
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            DateFormat('EEEE, d MMMM yyyy').format(now),
+            style: TextStyle(
+              color: isDark ? AppColors.darkTextSecondary : Colors.white70,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          Text(
+            DateFormat('HH:mm').format(now),
+            style: TextStyle(
+              color: isDark ? AppColors.darkTextPrimary : Colors.white,
+              fontSize: 36,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeaderIconButton(IconData icon, VoidCallback onTap,
+      {bool isDark = false, String? badge}) {
+    return Stack(
+      children: [
+        Container(
+          margin: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: isDark
+                ? Colors.white.withOpacity(0.1)
+                : Colors.white.withOpacity(0.2),
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: isDark
+                  ? Colors.white.withOpacity(0.2)
+                  : Colors.white.withOpacity(0.3),
+              width: 1,
+            ),
+          ),
+          child: IconButton(
+            icon: Icon(
+              icon,
+              color: isDark ? AppColors.darkTextPrimary : Colors.white,
+              size: 24,
+            ),
+            onPressed: onTap,
+          ),
+        ),
+        if (badge != null)
+          Positioned(
+            right: 8,
+            top: 8,
+            child: Container(
+              padding: const EdgeInsets.all(5),
+              decoration: BoxDecoration(
+                color: isDark ? AppColors.errorDark : AppColors.error,
+                shape: BoxShape.circle,
+              ),
+              child: Text(
+                badge,
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildStatusCard(bool isDark) {
+    // Dynamic color based on status
+    Color cardColor;
+    Color statusIconColor;
+    IconData statusIcon;
+
+    if (_hasActiveSession) {
+      // Active session - Green
+      cardColor = isDark ? Colors.green.shade900 : Colors.green.shade600;
+      statusIconColor = Colors.green;
+      statusIcon = Icons.radio_button_checked;
+    } else {
+      // Not started - Grey
+      cardColor = isDark ? AppColors.darkCard : Colors.grey.shade600;
+      statusIconColor = Colors.grey;
+      statusIcon = Icons.schedule;
+    }
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isDark ? AppColors.borderDark : Colors.white.withOpacity(0.3),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: isDark
+                ? Colors.black.withOpacity(0.3)
+                : cardColor.withOpacity(0.3),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          // Status header with icon
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? statusIconColor.withOpacity(0.2)
+                      : Colors.white.withOpacity(0.25),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  statusIcon,
+                  color: isDark ? statusIconColor : Colors.white,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _statusText,
+                      style: TextStyle(
+                        color:
+                            isDark ? AppColors.darkTextPrimary : Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    if (_hasActiveSession)
+                      Text(
+                        'Check-in: $_checkInTime',
+                        style: TextStyle(
+                          color: isDark
+                              ? AppColors.darkTextSecondary
+                              : Colors.white.withOpacity(0.9),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          if (_selectedPersonil != null) ...[
+            const SizedBox(height: 20),
+            const Divider(color: Colors.white24, height: 1),
+            const SizedBox(height: 20),
+
+            // Shift Info
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: isDark
+                    ? Colors.white.withOpacity(0.05)
+                    : Colors.white.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: isDark
+                      ? Colors.white.withOpacity(0.1)
+                      : Colors.white.withOpacity(0.25),
+                  width: 1,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.assignment_ind,
+                        color: isDark
+                            ? Colors.blue.shade300
+                            : Colors.white.withOpacity(0.9),
+                        size: 18,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Shift Terjadwal',
+                        style: TextStyle(
+                          color: isDark
+                              ? AppColors.darkTextSecondary
+                              : Colors.white.withOpacity(0.85),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            (_selectedPersonil!['pattern'] is Map &&
+                                    _selectedPersonil!['pattern']['name'] !=
+                                        null)
+                                ? _selectedPersonil!['pattern']['name']
+                                : '-',
+                            style: TextStyle(
+                              color:
+                                  isDark ? Colors.blue.shade200 : Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Pattern',
+                            style: TextStyle(
+                              color: isDark
+                                  ? AppColors.darkTextSecondary
+                                  : Colors.white.withOpacity(0.75),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (_hasActiveSession)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? Colors.green.shade700.withOpacity(0.4)
+                                : Colors.white.withOpacity(0.25),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.access_time,
+                                color: isDark
+                                    ? Colors.green.shade200
+                                    : Colors.white,
+                                size: 14,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                _currentDuration,
+                                style: TextStyle(
+                                  color: isDark
+                                      ? Colors.green.shade100
+                                      : Colors.white,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuickStats(bool isDark) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 20),
+      child: Row(
+        children: [
+          Expanded(
+            child: _buildStatCard(
+              icon: Icons.check_circle_outline,
+              value: _totalCheckIns.toString(),
+              label: 'Check-in',
+              subLabel: 'Hari ini',
+              color: Colors.green,
+              isDark: isDark,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _buildStatCard(
+              icon: Icons.access_time,
+              value: _currentDuration,
+              label: 'Durasi',
+              subLabel: _hasActiveSession ? 'Shift' : 'Total',
+              color: Colors.orange,
+              isDark: isDark,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _buildStatCard(
+              icon: Icons.location_on_outlined,
+              value: _totalPatrols.toString(),
+              label: 'Patroli',
+              subLabel: 'Bulan ini',
+              color: Colors.blue,
+              isDark: isDark,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatCard({
+    required IconData icon,
+    required String value,
+    required String label,
+    required String subLabel,
+    required Color color,
+    required bool isDark,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.darkCard : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isDark ? AppColors.borderDark : Colors.grey.shade200,
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: isDark
+                ? Colors.black.withOpacity(0.2)
+                : Colors.grey.withOpacity(0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Icon(
+            icon,
+            color: color,
+            size: 28,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: TextStyle(
+              color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: TextStyle(
+              color: isDark
+                  ? AppColors.darkTextSecondary
+                  : AppColors.textSecondary,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          Text(
+            subLabel,
+            style: TextStyle(
+              color: isDark
+                  ? AppColors.darkTextSecondary
+                  : AppColors.textSecondary,
+              fontSize: 10,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuickActions(bool isDark) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Aksi Cepat',
+            style: TextStyle(
+              color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _buildActionButton(
+                  icon: Icons.camera_alt,
+                  label: 'Check-in',
+                  color: Colors.green,
+                  onTap: _handleCheckIn,
+                  enabled: _hasActiveSession,
+                  isDark: isDark,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildActionButton(
+                  icon: Icons.exit_to_app,
+                  label: 'Check-out',
+                  color: Colors.orange,
+                  onTap: _handleCheckOut,
+                  enabled: _hasActiveSession,
+                  isDark: isDark,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _buildActionButton(
+                  icon: Icons.radio_button_checked,
+                  label: 'Mulai Patrol',
+                  color: Colors.blue,
+                  onTap: () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                          content: Text('Fitur Patrol - Segera Hadir')),
+                    );
+                  },
+                  enabled: _hasActiveSession,
+                  isDark: isDark,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildActionButton(
+                  icon: Icons.swap_horiz,
+                  label:
+                      _hasActiveSession ? 'Ganti Personil' : 'Pilih Personil',
+                  color: Colors.purple,
+                  onTap: _handleSwitchPersonil,
+                  enabled: true,
+                  isDark: isDark,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActionButton({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+    required bool enabled,
+    required bool isDark,
+  }) {
+    final isEnabled = enabled;
+    final buttonColor = isEnabled ? color : Colors.grey;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: isEnabled ? onTap : null,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 20),
+          decoration: BoxDecoration(
+            color: isDark
+                ? buttonColor.withOpacity(0.2)
+                : buttonColor.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: isDark
+                  ? buttonColor.withOpacity(0.3)
+                  : buttonColor.withOpacity(0.3),
+              width: 1.5,
+            ),
+          ),
+          child: Column(
+            children: [
+              Icon(
+                icon,
+                color: isEnabled
+                    ? (isDark ? buttonColor.withOpacity(0.8) : buttonColor)
+                    : Colors.grey.shade400,
+                size: 32,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                label,
+                style: TextStyle(
+                  color: isEnabled
+                      ? (isDark ? buttonColor.withOpacity(0.9) : buttonColor)
+                      : Colors.grey.shade500,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFloatingActionButton() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Material(
+      elevation: 4,
+      shape: const CircleBorder(),
+      color: isDark ? AppColors.darkCard : Colors.white,
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: () {
+          if (!_hasActiveSession) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Pilih personil terlebih dahulu'),
+                backgroundColor: Colors.orange,
+              ),
+            );
+            return;
+          }
+          _handleCheckIn();
+        },
+        child: Container(
+          width: 64,
+          height: 64,
+          alignment: Alignment.center,
+          child: Icon(
+            Icons.camera_alt,
+            size: 30,
+            weight: 600,
+            color: isDark ? AppColors.darkPrimary : AppColors.lightPrimary,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBottomNavBar() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return BottomAppBar(
+      shape: const CircularNotchedRectangle(),
+      notchMargin: 8.0,
+      color: isDark ? AppColors.darkSurface : Colors.white,
+      elevation: 8,
+      child: SizedBox(
+        height: 65,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              // Left side - 2 items
+              _buildBottomBarItem(
+                icon: Icons.home_rounded,
+                label: 'Home',
+                index: 0,
+              ),
+              _buildBottomBarItem(
+                icon: Icons.calendar_today,
+                label: 'Patrol',
+                index: 1,
+              ),
+              // Center space for FAB
+              const SizedBox(width: 56),
+              // Right side - 2 items
+              _buildBottomBarItem(
+                icon: Icons.history,
+                label: 'Riwayat',
+                index: 3,
+              ),
+              _buildBottomBarItem(
+                icon: Icons.person,
+                label: 'Profil',
+                index: 4,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBottomBarItem({
+    required IconData icon,
+    required String label,
+    required int index,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final primaryColor = Theme.of(context).colorScheme.primary;
+    final isSelected = _selectedIndex == index;
+
+    return InkWell(
+      onTap: () => setState(() => _selectedIndex = index),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              color: isSelected
+                  ? primaryColor
+                  : (isDark
+                      ? AppColors.darkTextSecondary
+                      : AppColors.lightTextSecondary),
+              size: 24,
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                color: isSelected
+                    ? primaryColor
+                    : (isDark
+                        ? AppColors.darkTextSecondary
+                        : AppColors.lightTextSecondary),
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showSettingsMenu(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => Container(
+        decoration: BoxDecoration(
+          color: isDark ? AppColors.darkSurface : Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 20),
+              decoration: BoxDecoration(
+                color: isDark ? AppColors.dividerDark : Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              child: Text(
+                'Pengaturan',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: isDark
+                      ? AppColors.darkTextPrimary
+                      : AppColors.lightTextPrimary,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            ListTile(
+              leading: Icon(
+                Icons.person,
+                color: isDark
+                    ? AppColors.darkTextPrimary
+                    : AppColors.lightTextPrimary,
+                size: 26,
+              ),
+              title: Text(
+                'Info Personil',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: isDark
+                      ? AppColors.darkTextPrimary
+                      : AppColors.lightTextPrimary,
+                ),
+              ),
+              subtitle: Text(
+                _selectedPersonil != null
+                    ? _selectedPersonil!['name']
+                    : 'Belum dipilih',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: isDark
+                      ? AppColors.darkTextSecondary
+                      : AppColors.lightTextSecondary,
+                ),
+              ),
+              onTap: () {
+                Navigator.pop(context);
+              },
+            ),
+            ListTile(
+              leading: Icon(
+                Icons.swap_horiz,
+                color: isDark
+                    ? AppColors.darkTextPrimary
+                    : AppColors.lightTextPrimary,
+                size: 26,
+              ),
+              title: Text(
+                'Ganti Personil',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: isDark
+                      ? AppColors.darkTextPrimary
+                      : AppColors.lightTextPrimary,
+                ),
+              ),
+              onTap: () {
+                Navigator.pop(context);
+                _handleSwitchPersonil();
+              },
+            ),
+            Divider(
+                color: isDark ? AppColors.dividerDark : AppColors.dividerLight),
+            ListTile(
+              leading: Icon(
+                Icons.logout,
+                color: isDark ? AppColors.errorDark : AppColors.error,
+                size: 26,
+              ),
+              title: Text(
+                'Logout dari Pos',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: isDark ? AppColors.errorDark : AppColors.error,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              onTap: () {
+                Navigator.pop(context);
+                _handleLogout();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // === ACTION HANDLERS ===
 
   Future<void> _selectPersonil() async {
     final roster = widget.sessionData['roster'] as List?;
@@ -107,7 +1135,8 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen> {
                     ),
                   ),
                   title: Text(person['name']),
-                  subtitle: Text('Pattern: ${person['pattern']['name']}'),
+                  subtitle: Text(
+                      'Pattern: ${(person['pattern'] is Map && person['pattern']['name'] != null) ? person['pattern']['name'] : '-'}'),
                   onTap: () => Navigator.pop(context, person),
                 )),
             const SizedBox(height: 20),
@@ -142,6 +1171,7 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen> {
       setState(() {
         _hasActiveSession = true;
         widget.sessionData.addAll(result);
+        _updateStatusFromSession();
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -157,7 +1187,9 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen> {
 
   Future<Position> _getCurrentLocation() async {
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) throw Exception('GPS tidak aktif');
+    if (!serviceEnabled) {
+      throw Exception('GPS tidak aktif');
+    }
 
     LocationPermission permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
@@ -200,6 +1232,11 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen> {
       await _loadTodayTimeline();
 
       if (mounted) {
+        setState(() {
+          _checkInTime = DateFormat('HH:mm').format(DateTime.now());
+          _statusText = 'Shift Aktif';
+        });
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
               content: Text('✓ Check-in berhasil'),
@@ -236,6 +1273,10 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen> {
       await _loadTodayTimeline();
 
       if (mounted) {
+        setState(() {
+          _checkOutTime = DateFormat('HH:mm').format(DateTime.now());
+        });
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
               content: Text('✓ Check-out berhasil'),
@@ -279,227 +1320,47 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen> {
       setState(() {
         _hasActiveSession = false;
         _selectedPersonil = null;
+        _updateStatusFromSession();
       });
     }
 
     await _selectPersonil();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final pos = widget.sessionData['pos'] ?? {};
-    final roster = widget.sessionData['roster'] ?? [];
-
-    return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [AppColors.primary, Colors.grey[100]!],
-            stops: const [0.0, 0.3],
+  Future<void> _handleLogout() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Logout'),
+        content: const Text('Keluar dari pos security?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Batal'),
           ),
-        ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              // Header
-              Padding(
-                padding: const EdgeInsets.all(20),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            (pos is Map && pos['name'] != null)
-                                ? pos['name']
-                                : 'Pos Security',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          Text(
-                            'Kode: ${(pos is Map && pos['code'] != null) ? pos['code'].toString().toUpperCase() : '-'}',
-                            style: const TextStyle(color: Colors.white70),
-                          ),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.logout, color: Colors.white),
-                      onPressed: () async {
-                        if (_hasActiveSession) {
-                          await _service.endSession();
-                        }
-                        if (mounted) {
-                          Navigator.pushReplacement(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => AppSelectorScreen(
-                                  authService: widget.authService!),
-                            ),
-                          );
-                        }
-                      },
-                    ),
-                  ],
-                ),
-              ),
-
-              // Content
-              Expanded(
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.grey[100],
-                    borderRadius:
-                        const BorderRadius.vertical(top: Radius.circular(30)),
-                  ),
-                  child: ListView(
-                    padding: const EdgeInsets.all(20),
-                    children: [
-                      // Personil Selector
-                      Card(
-                        child: ListTile(
-                          leading: CircleAvatar(
-                            backgroundColor: AppColors.primary.withOpacity(0.1),
-                            child: Icon(
-                              _selectedPersonil == null
-                                  ? Icons.person_add
-                                  : Icons.person,
-                              color: AppColors.primary,
-                            ),
-                          ),
-                          title: Text(
-                            _selectedPersonil == null
-                                ? 'Pilih Personil'
-                                : _selectedPersonil!['name'],
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          subtitle: _selectedPersonil != null
-                              ? Text(
-                                  'Pattern: ${(_selectedPersonil!['pattern'] is Map && _selectedPersonil!['pattern']['name'] != null) ? _selectedPersonil!['pattern']['name'] : '-'}')
-                              : const Text('Tap untuk memilih'),
-                          trailing:
-                              const Icon(Icons.arrow_forward_ios, size: 16),
-                          onTap: _handleSwitchPersonil,
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-
-                      // Check-in Button
-                      SizedBox(
-                        width: double.infinity,
-                        height: 60,
-                        child: ElevatedButton.icon(
-                          onPressed: _hasActiveSession ? _handleCheckIn : null,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          icon: const Icon(Icons.camera_alt, size: 28),
-                          label: const Text(
-                            'Check-in (GPS + Foto)',
-                            style: TextStyle(
-                                fontSize: 16, fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Check-out Button
-                      SizedBox(
-                        width: double.infinity,
-                        height: 60,
-                        child: ElevatedButton.icon(
-                          onPressed: _hasActiveSession ? _handleCheckOut : null,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.orange,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          icon: const Icon(Icons.camera_alt, size: 28),
-                          label: const Text(
-                            'Check-out (GPS + Foto)',
-                            style: TextStyle(
-                                fontSize: 16, fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Patrol Button
-                      SizedBox(
-                        width: double.infinity,
-                        height: 60,
-                        child: OutlinedButton.icon(
-                          onPressed: _hasActiveSession
-                              ? () {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content:
-                                          Text('Fitur Patrol segera hadir'),
-                                    ),
-                                  );
-                                }
-                              : null,
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppColors.primary,
-                            side:
-                                BorderSide(color: AppColors.primary, width: 2),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          icon: const Icon(Icons.my_location, size: 28),
-                          label: const Text(
-                            'Mulai Patrol',
-                            style: TextStyle(
-                                fontSize: 16, fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 30),
-
-                      // Timeline
-                      if (_todayTimeline.isNotEmpty) ...[
-                        const Text(
-                          'Timeline Hari Ini',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        ..._todayTimeline.map((item) => Card(
-                              child: ListTile(
-                                leading: Icon(
-                                  item['type'] == 'check-in'
-                                      ? Icons.login
-                                      : Icons.logout,
-                                  color: item['type'] == 'check-in'
-                                      ? Colors.green
-                                      : Colors.orange,
-                                ),
-                                title: Text(item['name']),
-                                subtitle: Text(item['time']),
-                              ),
-                            )),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-            ],
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Logout'),
           ),
-        ),
+        ],
       ),
     );
+
+    if (confirm != true) return;
+
+    if (_hasActiveSession) {
+      await _service.endSession();
+    }
+
+    if (mounted) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) =>
+              AppSelectorScreen(authService: widget.authService!),
+        ),
+      );
+    }
   }
 }
