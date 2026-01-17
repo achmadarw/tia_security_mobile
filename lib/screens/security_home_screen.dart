@@ -1104,7 +1104,7 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
 
         // Horizontal Scrollable Cards
         SizedBox(
-          height: 110,
+          height: 100,
           child: ListView.builder(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             scrollDirection: Axis.horizontal,
@@ -1115,10 +1115,84 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
               final isActive = personil['is_active'] ?? false;
               final name = personil['name'] ?? 'Unknown';
               final checkInTime = personil['check_in_time'];
-              final pattern = personil['pattern'];
-              final patternName = (pattern is Map && pattern['name'] != null)
-                  ? pattern['name']
-                  : '-';
+
+              // Extract shift information
+              final shift = personil['shift'];
+
+              // Try to get shift data from multiple sources
+              String shiftCode = '';
+              String shiftName = '';
+              String shiftStartTime = '';
+              String shiftEndTime = '';
+
+              if (shift is Map) {
+                shiftCode = shift['code']?.toString() ?? '';
+                shiftName = shift['name']?.toString() ?? '';
+                // Format time: remove seconds (HH:MM:SS -> HH:MM)
+                final rawStart = shift['start_time']?.toString() ?? '';
+                final rawEnd = shift['end_time']?.toString() ?? '';
+                shiftStartTime = rawStart.isNotEmpty && rawStart.length >= 5
+                    ? rawStart.substring(0, 5)
+                    : rawStart;
+                shiftEndTime = rawEnd.isNotEmpty && rawEnd.length >= 5
+                    ? rawEnd.substring(0, 5)
+                    : rawEnd;
+              }
+
+              // Fallback: try to get from assignment if shift is null
+              if (shiftCode.isEmpty && personil['assignment'] != null) {
+                final assignment = personil['assignment'];
+                if (assignment is Map && assignment['shift'] != null) {
+                  final assignmentShift = assignment['shift'];
+                  if (assignmentShift is Map) {
+                    shiftCode = assignmentShift['code']?.toString() ?? '';
+                    shiftName = assignmentShift['name']?.toString() ?? '';
+                    final rawStart =
+                        assignmentShift['start_time']?.toString() ?? '';
+                    final rawEnd =
+                        assignmentShift['end_time']?.toString() ?? '';
+                    shiftStartTime = rawStart.isNotEmpty && rawStart.length >= 5
+                        ? rawStart.substring(0, 5)
+                        : rawStart;
+                    shiftEndTime = rawEnd.isNotEmpty && rawEnd.length >= 5
+                        ? rawEnd.substring(0, 5)
+                        : rawEnd;
+                  }
+                }
+              }
+
+              // Debug: Print shift data
+              print(
+                  '🔍 Personil ${personil['name']}: shift=$shift, assignment=${personil['assignment']}, code=$shiftCode, time=$shiftStartTime-$shiftEndTime');
+
+              // Determine shift color based on code
+              Color shiftColor;
+              Color shiftBgColor;
+              if (shiftCode.toLowerCase().contains('pagi') ||
+                  (shiftStartTime.isNotEmpty &&
+                      shiftStartTime.startsWith('0'))) {
+                shiftColor = Colors.orange.shade700;
+                shiftBgColor = Colors.orange.shade50;
+              } else if (shiftCode.toLowerCase().contains('siang') ||
+                  (shiftStartTime.isNotEmpty &&
+                      (shiftStartTime.startsWith('1') ||
+                          shiftStartTime.startsWith('12') ||
+                          shiftStartTime.startsWith('13') ||
+                          shiftStartTime.startsWith('14')))) {
+                shiftColor = Colors.blue.shade700;
+                shiftBgColor = Colors.blue.shade50;
+              } else if (shiftCode.toLowerCase().contains('malam') ||
+                  (shiftStartTime.isNotEmpty &&
+                      (shiftStartTime.startsWith('2') ||
+                          shiftStartTime.startsWith('18') ||
+                          shiftStartTime.startsWith('19')))) {
+                shiftColor = Colors.purple.shade700;
+                shiftBgColor = Colors.purple.shade50;
+              } else {
+                shiftColor = Colors.grey.shade700;
+                shiftBgColor = Colors.grey.shade100;
+              }
+
               final posLocation = personil['pos_location'] ??
                   (widget.sessionData['pos']?['name'] ?? 'Pos Security');
 
@@ -1140,7 +1214,7 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
                   );
                 },
                 child: Container(
-                  width: 280,
+                  width: 300,
                   margin: const EdgeInsets.only(right: 12, bottom: 4),
                   decoration: BoxDecoration(
                     gradient: isActive
@@ -1191,7 +1265,8 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
                     children: [
                       // Main Content - Horizontal Layout
                       Padding(
-                        padding: const EdgeInsets.all(12),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 10),
                         child: Row(
                           children: [
                             // Avatar with active ring
@@ -1219,8 +1294,8 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
                                     : null,
                               ),
                               child: Container(
-                                width: 56,
-                                height: 56,
+                                width: 52,
+                                height: 52,
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
                                   color: isActive
@@ -1248,14 +1323,14 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
                                           : (isDark
                                               ? AppColors.darkPrimary
                                               : AppColors.lightPrimary),
-                                      fontSize: 24,
+                                      fontSize: 22,
                                       fontWeight: FontWeight.bold,
                                     ),
                                   ),
                                 ),
                               ),
                             ),
-                            const SizedBox(width: 12),
+                            const SizedBox(width: 10),
 
                             // Info Section
                             Expanded(
@@ -1263,52 +1338,111 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  // Name
-                                  Text(
-                                    name,
-                                    style: TextStyle(
-                                      color: isActive
-                                          ? Colors.white
-                                          : (isDark
-                                              ? AppColors.darkTextPrimary
-                                              : AppColors.textPrimary),
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
+                                  // Name & Shift Badge Row
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          name,
+                                          style: TextStyle(
+                                            color: isActive
+                                                ? Colors.white
+                                                : (isDark
+                                                    ? AppColors.darkTextPrimary
+                                                    : AppColors.textPrimary),
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      if (shiftName.isNotEmpty) ...[
+                                        const SizedBox(width: 6),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: isActive
+                                                ? Colors.white.withOpacity(0.3)
+                                                : shiftBgColor,
+                                            borderRadius:
+                                                BorderRadius.circular(6),
+                                            border: Border.all(
+                                              color: isActive
+                                                  ? Colors.white
+                                                      .withOpacity(0.5)
+                                                  : shiftColor.withOpacity(0.4),
+                                              width: 0.5,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            shiftName,
+                                            style: TextStyle(
+                                              color: isActive
+                                                  ? Colors.white
+                                                  : shiftColor,
+                                              fontSize: 9,
+                                              fontWeight: FontWeight.w700,
+                                              letterSpacing: 0.2,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ],
                                   ),
-                                  const SizedBox(height: 4),
+                                  const SizedBox(height: 3),
 
-                                  // Pattern
-                                  Text(
-                                    patternName,
-                                    style: TextStyle(
-                                      color: isActive
-                                          ? Colors.white.withOpacity(0.85)
-                                          : (isDark
-                                              ? AppColors.darkTextSecondary
-                                              : AppColors.textSecondary),
-                                      fontSize: 12,
+                                  // Shift Time (if available)
+                                  if (shiftStartTime.isNotEmpty &&
+                                      shiftEndTime.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(bottom: 3),
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            Icons.schedule_rounded,
+                                            size: 12,
+                                            color: isActive
+                                                ? Colors.white.withOpacity(0.8)
+                                                : (isDark
+                                                    ? AppColors
+                                                        .darkTextSecondary
+                                                    : AppColors.textSecondary),
+                                          ),
+                                          const SizedBox(width: 3),
+                                          Text(
+                                            '$shiftStartTime - $shiftEndTime',
+                                            style: TextStyle(
+                                              color: isActive
+                                                  ? Colors.white
+                                                      .withOpacity(0.9)
+                                                  : (isDark
+                                                      ? AppColors
+                                                          .darkTextSecondary
+                                                      : AppColors
+                                                          .textSecondary),
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  const SizedBox(height: 6),
 
                                   // Location
                                   Row(
                                     children: [
                                       Icon(
-                                        Icons.location_on,
+                                        Icons.location_on_rounded,
                                         size: 12,
                                         color: isActive
-                                            ? Colors.white.withOpacity(0.9)
+                                            ? Colors.white.withOpacity(0.8)
                                             : (isDark
                                                 ? AppColors.darkTextSecondary
                                                 : AppColors.textSecondary),
                                       ),
-                                      const SizedBox(width: 3),
+                                      const SizedBox(width: 4),
                                       Expanded(
                                         child: Text(
                                           posLocation,
@@ -1324,6 +1458,62 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
                                           ),
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      // Status Login Indicator
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: isActive
+                                              ? Colors.green.withOpacity(0.2)
+                                              : Colors.grey.withOpacity(0.15),
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          border: Border.all(
+                                            color: isActive
+                                                ? Colors.green.withOpacity(0.4)
+                                                : Colors.grey.withOpacity(0.3),
+                                            width: 0.5,
+                                          ),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Container(
+                                              width: 5,
+                                              height: 5,
+                                              decoration: BoxDecoration(
+                                                color: isActive
+                                                    ? Colors.green
+                                                    : Colors.grey,
+                                                shape: BoxShape.circle,
+                                                boxShadow: isActive
+                                                    ? [
+                                                        BoxShadow(
+                                                          color: Colors.green
+                                                              .withOpacity(0.5),
+                                                          blurRadius: 4,
+                                                          spreadRadius: 1,
+                                                        )
+                                                      ]
+                                                    : null,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              isActive ? 'Login' : 'Offline',
+                                              style: TextStyle(
+                                                color: isActive
+                                                    ? Colors.green.shade700
+                                                    : Colors.grey.shade600,
+                                                fontSize: 8,
+                                                fontWeight: FontWeight.w700,
+                                                letterSpacing: 0.2,
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ),
                                     ],
