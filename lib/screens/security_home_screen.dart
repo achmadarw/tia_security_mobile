@@ -148,6 +148,8 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      extendBody:
+          true, // Body extends behind BottomAppBar - notch jadi transparan!
       extendBodyBehindAppBar: true,
       body: RefreshIndicator(
         onRefresh: () async {
@@ -191,7 +193,10 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
       ),
       floatingActionButton: _buildFloatingActionButton(),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
-      bottomNavigationBar: _buildBottomNavBar(),
+      bottomNavigationBar: SizedBox(
+        height: 58, // Compact height
+        child: _buildBottomNavBar(),
+      ),
     );
   }
 
@@ -841,33 +846,40 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
   Widget _buildFloatingActionButton() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Material(
-      elevation: 4,
-      shape: const CircleBorder(),
-      color: isDark ? AppColors.darkCard : Colors.white,
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: () {
-          if (!_hasActiveSession) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Pilih personil terlebih dahulu'),
-                backgroundColor: Colors.orange,
-              ),
-            );
-            return;
-          }
-          _handleCheckIn();
-        },
-        child: Container(
-          width: 64,
-          height: 64,
-          alignment: Alignment.center,
-          child: Icon(
-            Icons.camera_alt,
-            size: 30,
-            weight: 600,
-            color: isDark ? AppColors.darkPrimary : AppColors.lightPrimary,
+    return Container(
+      width: 64,
+      height: 64,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: isDark ? AppColors.darkCard : Colors.white,
+        // NO SHADOW - area notch akan transparan
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: () {
+            if (!_hasActiveSession) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Pilih personil terlebih dahulu'),
+                  backgroundColor: Colors.orange,
+                ),
+              );
+              return;
+            }
+            _handleCheckIn();
+          },
+          child: Container(
+            width: 64,
+            height: 64,
+            alignment: Alignment.center,
+            child: Icon(
+              Icons.camera_alt,
+              size: 30,
+              weight: 600,
+              color: isDark ? AppColors.darkPrimary : AppColors.lightPrimary,
+            ),
           ),
         ),
       ),
@@ -879,42 +891,41 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
 
     return BottomAppBar(
       shape: const CircularNotchedRectangle(),
-      notchMargin: 8.0,
+      notchMargin: 4.0,
       color: isDark ? AppColors.darkSurface : Colors.white,
+      surfaceTintColor: Colors.transparent,
+      shadowColor: isDark ? Colors.black : Colors.grey.shade400,
       elevation: 8,
-      child: SizedBox(
-        height: 65,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              // Left side - 2 items
-              _buildBottomBarItem(
-                icon: Icons.home_rounded,
-                label: 'Home',
-                index: 0,
-              ),
-              _buildBottomBarItem(
-                icon: Icons.calendar_today,
-                label: 'Patrol',
-                index: 1,
-              ),
-              // Center space for FAB
-              const SizedBox(width: 56),
-              // Right side - 2 items
-              _buildBottomBarItem(
-                icon: Icons.history,
-                label: 'Riwayat',
-                index: 3,
-              ),
-              _buildBottomBarItem(
-                icon: Icons.person,
-                label: 'Profil',
-                index: 4,
-              ),
-            ],
-          ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            // Left side - 2 items
+            _buildBottomBarItem(
+              icon: Icons.home_rounded,
+              label: 'Home',
+              index: 0,
+            ),
+            _buildBottomBarItem(
+              icon: Icons.calendar_today,
+              label: 'Patrol',
+              index: 1,
+            ),
+            // Center space for FAB
+            const SizedBox(width: 56),
+            // Right side - 2 items
+            _buildBottomBarItem(
+              icon: Icons.history,
+              label: 'Riwayat',
+              index: 3,
+            ),
+            _buildBottomBarItem(
+              icon: Icons.person,
+              label: 'Profil',
+              index: 4,
+            ),
+          ],
         ),
       ),
     );
@@ -931,11 +942,12 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
 
     return InkWell(
       onTap: () => setState(() => _selectedIndex = index),
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
               icon,
@@ -944,13 +956,14 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
                   : (isDark
                       ? AppColors.darkTextSecondary
                       : AppColors.lightTextSecondary),
-              size: 24,
+              size: 22,
             ),
             const SizedBox(height: 2),
             Text(
               label,
               style: TextStyle(
-                fontSize: 11,
+                fontSize: 10,
+                height: 1.0,
                 color: isSelected
                     ? primaryColor
                     : (isDark
