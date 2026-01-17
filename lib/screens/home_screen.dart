@@ -228,6 +228,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      extendBody: true,
       extendBodyBehindAppBar: true,
       body: RefreshIndicator(
         onRefresh: () async {
@@ -276,7 +277,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       ),
       floatingActionButton: _buildFloatingActions(),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
-      bottomNavigationBar: _buildBottomNavBar(),
+      bottomNavigationBar: SizedBox(
+        height: 58,
+        child: _buildBottomNavBar(),
+      ),
     );
   }
 
@@ -2746,44 +2750,89 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   Widget _buildBottomNavBar() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final primaryColor = Theme.of(context).colorScheme.primary;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: isDark ? AppColors.darkSurface : Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: isDark
-                ? Colors.black.withOpacity(0.4)
-                : Colors.grey.withOpacity(0.2),
-            blurRadius: 20,
-            offset: const Offset(0, -5),
-          ),
-        ],
+    return BottomAppBar(
+      shape: const CircularNotchedRectangle(),
+      notchMargin: 4.0,
+      color: isDark ? AppColors.darkSurface : Colors.white,
+      surfaceTintColor: Colors.transparent,
+      shadowColor: isDark ? Colors.black : Colors.grey.shade400,
+      elevation: 8,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            _buildBottomBarItem(
+              icon: Icons.home_rounded,
+              label: 'Home',
+              index: 0,
+            ),
+            _buildBottomBarItem(
+              icon: Icons.calendar_today,
+              label: 'Jadwal',
+              index: 1,
+            ),
+            const SizedBox(width: 56),
+            _buildBottomBarItem(
+              icon: Icons.assessment,
+              label: 'Laporan',
+              index: 3,
+            ),
+            _buildBottomBarItem(
+              icon: Icons.person,
+              label: 'Profil',
+              index: 4,
+            ),
+          ],
+        ),
       ),
-      child: BottomNavigationBar(
-        currentIndex: _selectedIndex,
-        onTap: (index) => setState(() => _selectedIndex = index),
-        type: BottomNavigationBarType.fixed,
-        elevation: 0,
-        backgroundColor: Colors.transparent,
-        selectedItemColor: primaryColor,
-        unselectedItemColor:
-            isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
-        selectedFontSize: 13,
-        unselectedFontSize: 12,
-        selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600),
-        items: const [
-          BottomNavigationBarItem(
-              icon: Icon(Icons.home_rounded, size: 26), label: 'Home'),
-          BottomNavigationBarItem(
-              icon: Icon(Icons.calendar_today, size: 24), label: 'Jadwal'),
-          BottomNavigationBarItem(icon: Icon(Icons.face, size: 0), label: ''),
-          BottomNavigationBarItem(
-              icon: Icon(Icons.assessment, size: 26), label: 'Laporan'),
-          BottomNavigationBarItem(
-              icon: Icon(Icons.person, size: 26), label: 'Profil'),
-        ],
+    );
+  }
+
+  Widget _buildBottomBarItem({
+    required IconData icon,
+    required String label,
+    required int index,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final primaryColor = Theme.of(context).colorScheme.primary;
+    final isSelected = _selectedIndex == index;
+
+    return InkWell(
+      onTap: () => setState(() => _selectedIndex = index),
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              color: isSelected
+                  ? primaryColor
+                  : (isDark
+                      ? AppColors.darkTextSecondary
+                      : AppColors.lightTextSecondary),
+              size: 22,
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 10,
+                height: 1.0,
+                color: isSelected
+                    ? primaryColor
+                    : (isDark
+                        ? AppColors.darkTextSecondary
+                        : AppColors.lightTextSecondary),
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
