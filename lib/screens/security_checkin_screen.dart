@@ -22,11 +22,17 @@ enum LivenessStep {
 class SecurityCheckinScreen extends StatefulWidget {
   final SecurityAppService securityService;
   final bool isCheckOut;
+  final String? posToken;
+  final int? userId;
+  final List? roster;
 
   const SecurityCheckinScreen({
     Key? key,
     required this.securityService,
     this.isCheckOut = false,
+    this.posToken,
+    this.userId,
+    this.roster,
   }) : super(key: key);
 
   @override
@@ -415,37 +421,74 @@ class _SecurityCheckinScreenState extends State<SecurityCheckinScreen> {
       }
 
       setState(() {
-        _statusMessage = widget.isCheckOut
-            ? 'Melakukan check-out...'
-            : 'Melakukan check-in...';
+        _statusMessage = 'Memproses attendance...';
       });
 
+      // Backend will auto-detect: if already checked in, will switch to check-out
+      const requestType =
+          'check_in'; // Always send check_in, backend auto-detects
       print(
-          '[SECURITY_CHECKIN] Submitting ${widget.isCheckOut ? 'check-out' : 'check-in'}');
+          '[SECURITY_CHECKIN] Sending type: $requestType (backend will auto-adjust if needed)');
 
-      // Submit check-in or check-out to SecurityAppService
-      final Map<String, dynamic> result;
-      if (widget.isCheckOut) {
-        result = await widget.securityService.checkOut(
-          latitude: position.latitude,
-          longitude: position.longitude,
-        );
-      } else {
-        result = await widget.securityService.checkIn(
-          latitude: position.latitude,
-          longitude: position.longitude,
-        );
-      }
+      // Submit attendance with face recognition (auto-identify user)
+      final result = await widget.securityService.submitAttendanceWithFace(
+        embedding,
+        requestType,
+        latitude: position?.latitude,
+        longitude: position?.longitude,
+        posToken: widget.posToken,
+      );
 
       print('[SECURITY_CHECKIN] Result: $result');
 
+      if (result['success'] != true) {
+        String errorMsg = _translateAttendanceError(result['error']) ??
+            'Wajah tidak dikenali';
+
+        // Add confidence info if available
+        if (result['confidence'] != null) {
+          final confidence = result['confidence'];
+          errorMsg +=
+              '\n\nTingkat kepercayaan: ${confidence.toStringAsFixed(1)}%';
+        }
+
+        _showError(errorMsg);
+        return;
+      }
+
       // Success
-      final checkTime = result['check_time'] ?? DateTime.now().toString();
-      final location = result['location'] ?? 'Unknown';
+      final data = result['data'];
+      final confidence = result['confidence'] ?? 0.0;
+      final userName = result['security_name'] ?? 'Unknown';
+      final location = data?['location'] ?? 'Unknown';
+      final duration = data?['duration']; // Only available for check-out
+
+      // Auto-detect type: if has duration or check_out_time, it's checkout
+      final attendanceType = result['type'] ??
+          (duration != null || data?['check_out_time'] != null
+              ? 'check_out'
+              : 'check_in');
+
+      // Use appropriate time field based on type
+      final checkTime = attendanceType == 'check_out'
+          ? (data?['check_out_time'] ??
+              data?['check_time'] ??
+              DateTime.now().toString())
+          : (data?['check_time'] ?? DateTime.now().toString());
+
+      // Build detail message
+      String detailMessage =
+          'Nama: $userName\nConfidence: ${confidence.toStringAsFixed(1)}%\nWaktu: $checkTime\nLokasi: $location';
+      if (duration != null) {
+        detailMessage += '\nDurasi: $duration';
+      }
 
       _showSuccessDialog(
-        widget.isCheckOut ? 'Check-out Berhasil!' : 'Check-in Berhasil!',
-        'Waktu: $checkTime\nLokasi: $location',
+        attendanceType == 'check_out'
+            ? 'Check-out Berhasil!'
+            : 'Check-in Berhasil!',
+        detailMessage,
+        attendanceType, // Pass type to dialog
       );
     } catch (e, stackTrace) {
       ErrorHandler.logError('SECURITY_CHECKIN', e, stackTrace: stackTrace);
@@ -453,7 +496,7 @@ class _SecurityCheckinScreenState extends State<SecurityCheckinScreen> {
     }
   }
 
-  void _showSuccessDialog(String title, String message) {
+  void _showSuccessDialog(String title, String message, String attendanceType) {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -482,8 +525,10 @@ class _SecurityCheckinScreenState extends State<SecurityCheckinScreen> {
           TextButton(
             onPressed: () {
               Navigator.pop(context); // Close dialog
-              Navigator.pop(
-                  context, true); // Close check-in screen with result=true
+              Navigator.pop(context, {
+                'success': true,
+                'type': attendanceType,
+              }); // Return result with type
             },
             child: const Text('OK'),
           ),
@@ -510,6 +555,46 @@ class _SecurityCheckinScreenState extends State<SecurityCheckinScreen> {
       _statusMessage = message;
       _statusColor = Colors.red;
     });
+  }
+
+  // Translate attendance error codes to Indonesian
+  String _translateAttendanceError(String? error) {
+    if (error == null) return 'Wajah tidak dikenali';
+
+    final errorUpper = error.toUpperCase();
+
+    // Check for specific error codes
+    if (errorUpper.contains('CONFIDENCE_TOO_LOW') ||
+        errorUpper.contains('CONFIDENCE TOO LOW') ||
+        errorUpper == 'CONFIDENCE_TOO_LOW') {
+      return 'Silakan coba lagi dengan pencahayaan lebih baik dan posisi wajah lebih jelas.';
+    }
+
+    if (errorUpper.contains('INSUFFICIENT_MARGIN') ||
+        errorUpper.contains('MARGIN')) {
+      return 'Wajah terlalu mirip dengan pengguna lain.\nSilakan coba lagi dengan pencahayaan lebih baik.';
+    }
+
+    if (errorUpper.contains('NO_MATCH') ||
+        errorUpper.contains('NOT_RECOGNIZED')) {
+      return 'Wajah tidak dikenali.\nPastikan Anda sudah terdaftar dan pencahayaan cukup.';
+    }
+
+    if (errorUpper.contains('QUALITY')) {
+      return 'Kualitas gambar tidak memenuhi syarat.\nSilakan coba lagi dengan pencahayaan lebih baik.';
+    }
+
+    if (errorUpper.contains('NO REGISTERED FACE') ||
+        errorUpper.contains('NO_EMBEDDINGS')) {
+      return 'Anda belum mendaftarkan wajah.\nSilakan daftar wajah terlebih dahulu.';
+    }
+
+    if (errorUpper.contains('MULTIPLE_FACES')) {
+      return 'Terdeteksi lebih dari satu wajah.\nPastikan hanya wajah Anda yang terlihat.';
+    }
+
+    // Return original error if no translation found
+    return error;
   }
 
   void _restartDetection() {
@@ -594,9 +679,7 @@ class _SecurityCheckinScreenState extends State<SecurityCheckinScreen> {
                       onPressed: () => Navigator.pop(context),
                     ),
                     Text(
-                      widget.isCheckOut
-                          ? 'Security Check-Out'
-                          : 'Security Check-In',
+                      'Security Attendance',
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 20,

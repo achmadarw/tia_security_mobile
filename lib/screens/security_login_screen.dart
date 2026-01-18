@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:ui';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/security_app_service.dart';
 import '../services/auth_service.dart';
 import '../config/theme.dart';
@@ -67,6 +68,12 @@ class _SecurityLoginScreenState extends State<SecurityLoginScreen>
       );
 
       if (!mounted) return;
+
+      // Save credentials and pos_token to SharedPreferences for refresh
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('security_pos_token', result['pos_token']);
+      await prefs.setString('security_pos_code', _selectedPosCode!);
+      await prefs.setString('security_pos_password', _passwordController.text);
 
       // Navigate directly to home screen with pos data and roster
       Navigator.pushReplacement(

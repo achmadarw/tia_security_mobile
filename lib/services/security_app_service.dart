@@ -57,7 +57,11 @@ class SecurityAppService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true) {
-          return data['data'];
+          print('[Security Login] ✅ Login successful');
+          return {
+            'success': true,
+            ...data['data'], // Spread nested data ke top level
+          };
         } else {
           throw Exception(data['error'] ?? 'Login failed');
         }
@@ -168,11 +172,31 @@ class SecurityAppService {
     required double latitude,
     required double longitude,
     String? notes,
+    String? posToken,
+    int? userId,
   }) async {
     try {
-      final token = await _getToken();
-      if (token == null) {
-        throw Exception('No authentication token');
+      String? token;
+      Map<String, String> headers = {'Content-Type': 'application/json'};
+      Map<String, dynamic> body = {
+        'latitude': latitude,
+        'longitude': longitude,
+        if (notes != null) 'notes': notes,
+      };
+
+      // If posToken and userId provided, use them (for quick attendance)
+      if (posToken != null && userId != null) {
+        headers['x-pos-token'] = posToken;
+        body['user_id'] = userId;
+        print('[Check-in] Using pos_token with user_id: $userId');
+      } else {
+        // Otherwise use access_token (for normal flow)
+        token = await _getToken();
+        if (token == null) {
+          throw Exception('No authentication token');
+        }
+        headers['Authorization'] = 'Bearer $token';
+        print('[Check-in] Using access_token');
       }
 
       final url = Uri.parse('${ApiConfig.serverUrl}$baseEndpoint/check-in');
@@ -182,15 +206,8 @@ class SecurityAppService {
 
       final response = await http.post(
         url,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-        body: jsonEncode({
-          'latitude': latitude,
-          'longitude': longitude,
-          if (notes != null) 'notes': notes,
-        }),
+        headers: headers,
+        body: jsonEncode(body),
       );
 
       print('[Check-in] Status: ${response.statusCode}');
@@ -217,11 +234,31 @@ class SecurityAppService {
     required double latitude,
     required double longitude,
     String? notes,
+    String? posToken,
+    int? userId,
   }) async {
     try {
-      final token = await _getToken();
-      if (token == null) {
-        throw Exception('No authentication token');
+      String? token;
+      Map<String, String> headers = {'Content-Type': 'application/json'};
+      Map<String, dynamic> body = {
+        'latitude': latitude,
+        'longitude': longitude,
+        if (notes != null) 'notes': notes,
+      };
+
+      // If posToken and userId provided, use them (for quick attendance)
+      if (posToken != null && userId != null) {
+        headers['x-pos-token'] = posToken;
+        body['user_id'] = userId;
+        print('[Check-out] Using pos_token with user_id: $userId');
+      } else {
+        // Otherwise use access_token (for normal flow)
+        token = await _getToken();
+        if (token == null) {
+          throw Exception('No authentication token');
+        }
+        headers['Authorization'] = 'Bearer $token';
+        print('[Check-out] Using access_token');
       }
 
       final url = Uri.parse('${ApiConfig.serverUrl}$baseEndpoint/check-out');
@@ -231,15 +268,8 @@ class SecurityAppService {
 
       final response = await http.post(
         url,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-        body: jsonEncode({
-          'latitude': latitude,
-          'longitude': longitude,
-          if (notes != null) 'notes': notes,
-        }),
+        headers: headers,
+        body: jsonEncode(body),
       );
 
       print('[Check-out] Status: ${response.statusCode}');
@@ -257,6 +287,75 @@ class SecurityAppService {
       }
     } catch (e) {
       print('[Check-out] Error: $e');
+      rethrow;
+    }
+  }
+
+  /// Submit attendance with face recognition (auto-identify user)
+  Future<Map<String, dynamic>> submitAttendanceWithFace(
+    List<double> embedding,
+    String attendanceType, {
+    double? latitude,
+    double? longitude,
+    String? posToken,
+  }) async {
+    try {
+      Map<String, String> headers = {'Content-Type': 'application/json'};
+      String? token;
+
+      // If posToken provided, use it
+      if (posToken != null) {
+        headers['x-pos-token'] = posToken;
+        print('[Attendance Face] Using pos_token');
+      } else {
+        // Otherwise use access_token
+        token = await _getToken();
+        if (token == null) {
+          throw Exception('No authentication token');
+        }
+        headers['Authorization'] = 'Bearer $token';
+        print('[Attendance Face] Using access_token');
+      }
+
+      final url =
+          Uri.parse('${ApiConfig.serverUrl}$baseEndpoint/attendance-with-face');
+
+      print('[Attendance Face] POST $url');
+      print('[Attendance Face] Type: $attendanceType');
+      print('[Attendance Face] Embedding length: ${embedding.length}');
+
+      final response = await http.post(
+        url,
+        headers: headers,
+        body: jsonEncode({
+          'embedding': embedding,
+          'type': attendanceType,
+          if (latitude != null) 'latitude': latitude,
+          if (longitude != null) 'longitude': longitude,
+        }),
+      );
+
+      print('[Attendance Face] Status: ${response.statusCode}');
+
+      final responseData = jsonDecode(response.body);
+
+      if (response.statusCode == 200) {
+        if (responseData['success'] == true) {
+          return {
+            'success': true,
+            'data': responseData['data'],
+            'confidence': responseData['confidence'],
+            'user_id': responseData['user_id'],
+            'security_name': responseData['security_name'],
+          };
+        } else {
+          throw Exception(responseData['error'] ?? 'Attendance failed');
+        }
+      } else {
+        throw Exception(responseData['error'] ?? 'Attendance failed');
+      }
+    } catch (e) {
+      print('[Attendance Face] Error: $e');
       rethrow;
     }
   }
