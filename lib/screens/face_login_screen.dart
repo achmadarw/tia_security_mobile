@@ -24,8 +24,7 @@ enum LoginStep {
 class FaceLoginScreen extends StatefulWidget {
   final AuthService authService;
 
-  const FaceLoginScreen({Key? key, required this.authService})
-      : super(key: key);
+  const FaceLoginScreen({super.key, required this.authService});
 
   @override
   State<FaceLoginScreen> createState() => _FaceLoginScreenState();
@@ -183,7 +182,7 @@ class _FaceLoginScreenState extends State<FaceLoginScreen> {
         } else {
           setState(() {
             _statusMessage =
-                'Hadap langsung ke kamera... (${_stableFrames}/$_requiredStableFrames)';
+                'Hadap langsung ke kamera... ($_stableFrames/$_requiredStableFrames)';
             _statusColor = Colors.orange;
           });
         }
@@ -396,7 +395,7 @@ class _FaceLoginScreenState extends State<FaceLoginScreen> {
 
         // Login successful
         _showSuccess(
-          'Login successful!${attendanceMsg}\nConfidence: ${(result['confidence']).toStringAsFixed(1)}%',
+          'Login successful!$attendanceMsg\nConfidence: ${(result['confidence']).toStringAsFixed(1)}%',
         );
 
         // Navigate to home

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'dart:ui';
 import '../../models/shift.dart';
 import '../../services/shift_service.dart';
 import '../../services/auth_service.dart';
@@ -11,9 +10,9 @@ class ShiftManagementScreen extends StatefulWidget {
   final AuthService authService;
 
   const ShiftManagementScreen({
-    Key? key,
+    super.key,
     required this.authService,
-  }) : super(key: key);
+  });
 
   @override
   State<ShiftManagementScreen> createState() => _ShiftManagementScreenState();

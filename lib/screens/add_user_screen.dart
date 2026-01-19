@@ -201,7 +201,7 @@ class _AddUserScreenState extends State<AddUserScreen> {
                                     elevation: 5,
                                   ),
                                   child: _isLoading
-                                      ? SizedBox(
+                                      ? const SizedBox(
                                           height: 24,
                                           width: 24,
                                           child: CircularProgressIndicator(

@@ -27,13 +27,13 @@ class SecurityCheckinScreen extends StatefulWidget {
   final List? roster;
 
   const SecurityCheckinScreen({
-    Key? key,
+    super.key,
     required this.securityService,
     this.isCheckOut = false,
     this.posToken,
     this.userId,
     this.roster,
-  }) : super(key: key);
+  });
 
   @override
   State<SecurityCheckinScreen> createState() => _SecurityCheckinScreenState();
@@ -58,7 +58,7 @@ class _SecurityCheckinScreenState extends State<SecurityCheckinScreen> {
   // Liveness detection
   LivenessStep _currentLivenessStep = LivenessStep.initial;
   bool _eyesWereOpen = false;
-  List<File> _capturedImages = [];
+  final List<File> _capturedImages = [];
   int _currentStep = 0;
   final int _totalSteps = 1; // Only blink detection, no head turn
 
@@ -415,11 +415,6 @@ class _SecurityCheckinScreenState extends State<SecurityCheckinScreen> {
         return;
       }
 
-      if (position == null) {
-        _showError('Gagal mendapatkan lokasi GPS.');
-        return;
-      }
-
       setState(() {
         _statusMessage = 'Memproses attendance...';
       });
@@ -434,8 +429,8 @@ class _SecurityCheckinScreenState extends State<SecurityCheckinScreen> {
       final result = await widget.securityService.submitAttendanceWithFace(
         embedding,
         requestType,
-        latitude: position?.latitude,
-        longitude: position?.longitude,
+        latitude: position.latitude,
+        longitude: position.longitude,
         posToken: widget.posToken,
       );
 
@@ -678,9 +673,9 @@ class _SecurityCheckinScreenState extends State<SecurityCheckinScreen> {
                       icon: const Icon(Icons.arrow_back, color: Colors.white),
                       onPressed: () => Navigator.pop(context),
                     ),
-                    Text(
+                    const Text(
                       'Security Attendance',
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: Colors.white,
                         fontSize: 20,
                         fontWeight: FontWeight.bold,

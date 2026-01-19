@@ -29,7 +29,7 @@ class SessionManager {
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
+        title: const Row(
           children: [
             Icon(Icons.info_outline, color: Colors.orange, size: 28),
             SizedBox(width: 12),
@@ -45,7 +45,7 @@ class SessionManager {
         content: Text(
           message ??
               'Sesi Anda telah berakhir. Silakan login kembali untuk melanjutkan.',
-          style: TextStyle(fontSize: 16),
+          style: const TextStyle(fontSize: 16),
         ),
         actions: [
           ElevatedButton(
@@ -56,12 +56,12 @@ class SessionManager {
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.blue,
               foregroundColor: Colors.white,
-              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(8),
               ),
             ),
-            child: Text('Login Kembali', style: TextStyle(fontSize: 16)),
+            child: const Text('Login Kembali', style: TextStyle(fontSize: 16)),
           ),
         ],
       ),

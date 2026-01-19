@@ -119,7 +119,7 @@ class HttpHelper {
     try {
       return jsonDecode(body);
     } catch (e) {
-      throw FormatException('Invalid JSON response');
+      throw const FormatException('Invalid JSON response');
     }
   }
 }

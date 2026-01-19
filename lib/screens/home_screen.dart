@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'dart:ui';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
@@ -787,7 +786,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                               ),
                                             ],
                                           ),
-                                          child: Text(
+                                          child: const Text(
                                             'NOW',
                                             style: TextStyle(
                                               color: Colors.white,
@@ -1177,7 +1176,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                             ],
                           ),
                         );
-                      }).toList(),
+                      }),
                     ],
                   ),
                 ),
@@ -1289,15 +1288,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                   width: 1,
                                 ),
                               ),
-                              child: Row(
+                              child: const Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Icon(Icons.exit_to_app,
                                       color: Colors.white, size: 14),
-                                  const SizedBox(width: 4),
+                                  SizedBox(width: 4),
                                   Text(
                                     'PULANG CEPAT',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       color: Colors.white,
                                       fontSize: 11,
                                       fontWeight: FontWeight.bold,
@@ -1330,7 +1329,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(Icons.trending_up,
+                                  const Icon(Icons.trending_up,
                                       color: Colors.white, size: 14),
                                   const SizedBox(width: 4),
                                   Text(
@@ -1353,7 +1352,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         );
                       }).expand((badges) sync* {
                         yield* [badges];
-                      }).toList(),
+                      }),
                     ],
                   ),
                 ),
@@ -1911,11 +1910,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               builder: (context) => AlertDialog(
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16)),
-                title: Row(
+                title: const Row(
                   children: [
-                    const Icon(Icons.schedule, color: Colors.orange, size: 32),
-                    const SizedBox(width: 12),
-                    const Expanded(
+                    Icon(Icons.schedule, color: Colors.orange, size: 32),
+                    SizedBox(width: 12),
+                    Expanded(
                       child: Text(
                         'Shift Belum Berakhir',
                         style: TextStyle(
@@ -1962,11 +1961,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               builder: (context) => AlertDialog(
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16)),
-                title: Row(
+                title: const Row(
                   children: [
-                    const Icon(Icons.logout, color: Colors.blue, size: 32),
-                    const SizedBox(width: 12),
-                    const Expanded(
+                    Icon(Icons.logout, color: Colors.blue, size: 32),
+                    SizedBox(width: 12),
+                    Expanded(
                       child: Text(
                         'Konfirmasi Check-Out',
                         style: TextStyle(
@@ -2013,14 +2012,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           print('[HOME] completedShifts: ${completedShifts?.length ?? 0}');
 
           if (completedShifts != null && completedShifts.isNotEmpty) {
-            print('[HOME] completedShifts data: ${completedShifts}');
+            print('[HOME] completedShifts data: $completedShifts');
             final lastCompletedShift = completedShifts.last;
-            print('[HOME] Last completed shift: ${lastCompletedShift}');
+            print('[HOME] Last completed shift: $lastCompletedShift');
 
             final checkInData = lastCompletedShift['checkIn'];
             final checkOutData = lastCompletedShift['checkOut'];
-            print('[HOME] checkInData: ${checkInData}');
-            print('[HOME] checkOutData: ${checkOutData}');
+            print('[HOME] checkInData: $checkInData');
+            print('[HOME] checkOutData: $checkOutData');
 
             // Try to get shift_end_time from checkIn first, fallback to checkOut
             String? lastShiftEndTime = checkInData?['shift_end_time'] ??
@@ -2058,12 +2057,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     builder: (context) => AlertDialog(
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16)),
-                      title: Row(
+                      title: const Row(
                         children: [
-                          const Icon(Icons.schedule,
+                          Icon(Icons.schedule,
                               color: Colors.orange, size: 32),
-                          const SizedBox(width: 12),
-                          const Expanded(
+                          SizedBox(width: 12),
+                          Expanded(
                             child: Text(
                               'Shift Sebelumnya Belum Berakhir',
                               style: TextStyle(
@@ -2075,7 +2074,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         ],
                       ),
                       content: Text(
-                        'Shift sebelumnya akan berakhir pada pukul ${lastShiftEndTime}.\n\nApakah Anda yakin ingin check-in untuk shift backup sekarang?',
+                        'Shift sebelumnya akan berakhir pada pukul $lastShiftEndTime.\n\nApakah Anda yakin ingin check-in untuk shift backup sekarang?',
                         style: const TextStyle(fontSize: 16),
                       ),
                       actions: [
@@ -2520,12 +2519,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 builder: (context) => AlertDialog(
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16)),
-                  title: Row(
+                  title: const Row(
                     children: [
-                      const Icon(Icons.schedule,
+                      Icon(Icons.schedule,
                           color: Colors.orange, size: 32),
-                      const SizedBox(width: 12),
-                      const Expanded(
+                      SizedBox(width: 12),
+                      Expanded(
                         child: Text(
                           'Shift Belum Berakhir',
                           style: TextStyle(
@@ -2572,11 +2571,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 builder: (context) => AlertDialog(
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16)),
-                  title: Row(
+                  title: const Row(
                     children: [
-                      const Icon(Icons.logout, color: Colors.blue, size: 32),
-                      const SizedBox(width: 12),
-                      const Expanded(
+                      Icon(Icons.logout, color: Colors.blue, size: 32),
+                      SizedBox(width: 12),
+                      Expanded(
                         child: Text(
                           'Konfirmasi Check-Out',
                           style: TextStyle(
@@ -2624,14 +2623,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 '[HOME] FAB - completedShifts: ${completedShifts?.length ?? 0}');
 
             if (completedShifts != null && completedShifts.isNotEmpty) {
-              print('[HOME] FAB - completedShifts data: ${completedShifts}');
+              print('[HOME] FAB - completedShifts data: $completedShifts');
               final lastCompletedShift = completedShifts.last;
-              print('[HOME] FAB - Last completed shift: ${lastCompletedShift}');
+              print('[HOME] FAB - Last completed shift: $lastCompletedShift');
 
               final checkInData = lastCompletedShift['checkIn'];
               final checkOutData = lastCompletedShift['checkOut'];
-              print('[HOME] FAB - checkInData: ${checkInData}');
-              print('[HOME] FAB - checkOutData: ${checkOutData}');
+              print('[HOME] FAB - checkInData: $checkInData');
+              print('[HOME] FAB - checkOutData: $checkOutData');
 
               // Try to get shift_end_time from checkIn first, fallback to checkOut
               String? lastShiftEndTime = checkInData?['shift_end_time'] ??
@@ -2671,12 +2670,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       builder: (context) => AlertDialog(
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16)),
-                        title: Row(
+                        title: const Row(
                           children: [
-                            const Icon(Icons.schedule,
+                            Icon(Icons.schedule,
                                 color: Colors.orange, size: 32),
-                            const SizedBox(width: 12),
-                            const Expanded(
+                            SizedBox(width: 12),
+                            Expanded(
                               child: Text(
                                 'Shift Sebelumnya Belum Berakhir',
                                 style: TextStyle(
@@ -2688,7 +2687,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           ],
                         ),
                         content: Text(
-                          'Shift sebelumnya akan berakhir pada pukul ${lastShiftEndTime}.\n\nApakah Anda yakin ingin check-in untuk shift backup sekarang?',
+                          'Shift sebelumnya akan berakhir pada pukul $lastShiftEndTime.\n\nApakah Anda yakin ingin check-in untuk shift backup sekarang?',
                           style: const TextStyle(fontSize: 16),
                         ),
                         actions: [

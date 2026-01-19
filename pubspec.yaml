@@ -41,6 +41,7 @@ dependencies:
     # Location & Permissions
     geolocator: ^11.0.0
     permission_handler: ^11.2.0
+    google_maps_flutter: ^2.5.3
 
     # Utils
     intl: ^0.19.0
@@ -48,6 +49,7 @@ dependencies:
     cached_network_image: ^3.3.1
     shimmer: ^3.0.0
     fluttertoast: ^8.2.4
+    http_parser: any
 
 dev_dependencies:
     flutter_test:

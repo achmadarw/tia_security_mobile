@@ -9,7 +9,7 @@ import 'security_home_screen.dart';
 /// Security Login Screen
 /// Pos-based login for security guards with modern glassmorphism UI
 class SecurityLoginScreen extends StatefulWidget {
-  const SecurityLoginScreen({Key? key}) : super(key: key);
+  const SecurityLoginScreen({super.key});
 
   @override
   State<SecurityLoginScreen> createState() => _SecurityLoginScreenState();
@@ -344,7 +344,7 @@ class _SecurityLoginScreenState extends State<SecurityLoginScreen>
                       elevation: 5,
                     ),
                     child: _isLoading
-                        ? SizedBox(
+                        ? const SizedBox(
                             height: 24,
                             width: 24,
                             child: CircularProgressIndicator(

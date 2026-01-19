@@ -19,9 +19,9 @@ class RosterManagementScreen extends StatefulWidget {
   final AuthService authService;
 
   const RosterManagementScreen({
-    Key? key,
+    super.key,
     required this.authService,
-  }) : super(key: key);
+  });
 
   @override
   State<RosterManagementScreen> createState() => _RosterManagementScreenState();
@@ -129,7 +129,7 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
       print('📅 Assignments grouped by ${assignmentsByDate.length} dates');
 
       // DEBUG: Check if Ilham has assignment on Dec 1
-      final dec1Key = '2025-12-01';
+      const dec1Key = '2025-12-01';
       if (assignmentsByDate.containsKey(dec1Key)) {
         final dec1Assignments = assignmentsByDate[dec1Key]!;
         final ilhamDec1 = dec1Assignments.where((a) => a.userId == 8).toList();
@@ -685,7 +685,7 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
                 builder: (context, child) {
                   return Theme(
                     data: Theme.of(context).copyWith(
-                      colorScheme: ColorScheme.light(
+                      colorScheme: const ColorScheme.light(
                         primary: AppColors.primary,
                       ),
                     ),
@@ -1159,8 +1159,8 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.person_off, size: 64, color: Colors.grey),
-            SizedBox(height: 16),
+            const Icon(Icons.person_off, size: 64, color: Colors.grey),
+            const SizedBox(height: 16),
             Text(
               'Belum ada user security',
               style: TextStyle(
@@ -1191,7 +1191,7 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
                   size: 18,
                   color:
                       isDark ? AppColors.darkTextSecondary : AppColors.primary),
-              SizedBox(width: 8),
+              const SizedBox(width: 8),
               Text(
                 'Urutan:',
                 style: TextStyle(
@@ -1202,10 +1202,10 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
                       : AppColors.lightTextPrimary,
                 ),
               ),
-              SizedBox(width: 8),
+              const SizedBox(width: 8),
               Expanded(
                 child: Container(
-                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                   decoration: BoxDecoration(
                     color: isDark
                         ? AppColors.darkSurfaceVariant
@@ -1235,7 +1235,7 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
                             ? AppColors.darkTextSecondary
                             : AppColors.lightTextSecondary,
                       ),
-                      items: [
+                      items: const [
                         DropdownMenuItem(
                           value: 'first',
                           child: Row(
@@ -1544,7 +1544,7 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
           ),
         ),
         child: Center(
-          child: !isOff && shift != null
+          child: !isOff
               ? () {
                   // Generate color variants from shift color (same as PDF/portal)
                   final shiftData = shift!; // Assert non-null after check
@@ -1650,7 +1650,7 @@ class _RosterManagementScreenState extends State<RosterManagementScreen> {
                     color: AppColors.primary.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Icon(Icons.info_outline,
+                  child: const Icon(Icons.info_outline,
                       color: AppColors.primary, size: 20),
                 ),
                 const SizedBox(width: 12),

@@ -73,7 +73,7 @@ class _AddShiftScreenState extends State<AddShiftScreen> {
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
-            colorScheme: ColorScheme.light(
+            colorScheme: const ColorScheme.light(
               primary: AppColors.primary,
             ),
           ),
@@ -408,7 +408,7 @@ class _AddShiftScreenState extends State<AddShiftScreen> {
           children: [
             Row(
               children: [
-                Icon(Icons.access_time, color: Colors.white70, size: 20),
+                const Icon(Icons.access_time, color: Colors.white70, size: 20),
                 const SizedBox(width: 8),
                 Text(
                   label,

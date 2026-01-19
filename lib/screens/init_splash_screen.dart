@@ -12,8 +12,7 @@ import 'security_home_screen.dart';
 class InitSplashScreen extends StatefulWidget {
   final AuthService authService;
 
-  const InitSplashScreen({Key? key, required this.authService})
-      : super(key: key);
+  const InitSplashScreen({super.key, required this.authService});
 
   @override
   State<InitSplashScreen> createState() => _InitSplashScreenState();

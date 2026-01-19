@@ -23,11 +23,11 @@ class QualityIndicatorWidget extends StatelessWidget {
   final bool showDetails;
 
   const QualityIndicatorWidget({
-    Key? key,
+    super.key,
     required this.qualityScore,
     this.checks,
     this.showDetails = false,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -238,10 +238,10 @@ class QualityBadge extends StatelessWidget {
   final bool showLabel;
 
   const QualityBadge({
-    Key? key,
+    super.key,
     required this.qualityScore,
     this.showLabel = true,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -298,10 +298,10 @@ class RealtimeQualityIndicator extends StatelessWidget {
   final bool isProcessing;
 
   const RealtimeQualityIndicator({
-    Key? key,
+    super.key,
     required this.qualityScore,
     this.isProcessing = false,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

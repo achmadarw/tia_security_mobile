@@ -1,12 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'dart:ui';
-import 'package:provider/provider.dart';
 import '../services/user_service.dart';
 import '../services/auth_service.dart';
 import '../models/user.dart';
 import '../config/theme.dart';
-import '../config/theme_provider.dart';
 import 'add_user_screen.dart';
 import 'user_detail_screen.dart';
 
@@ -75,7 +72,7 @@ class _UsersScreenState extends State<UsersScreen> {
 
     // Set status bar color
     SystemChrome.setSystemUIOverlayStyle(
-      SystemUiOverlayStyle(
+      const SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
         statusBarIconBrightness: Brightness.light,
         statusBarBrightness: Brightness.dark,
@@ -473,7 +470,7 @@ class _UsersScreenState extends State<UsersScreen> {
   }
 
   Widget _buildLoading() {
-    return Center(
+    return const Center(
       child: CircularProgressIndicator(color: AppColors.primary),
     );
   }

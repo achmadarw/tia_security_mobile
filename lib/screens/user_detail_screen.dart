@@ -1,12 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
-import 'dart:ui';
 import '../services/user_service.dart';
 import '../services/auth_service.dart';
 import '../models/user.dart';
 import '../config/theme.dart';
-import '../config/theme_provider.dart';
 import 'face_registration_screen.dart';
 
 class UserDetailScreen extends StatefulWidget {
@@ -751,7 +748,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
                   color: AppColors.primary.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(
+                child: const Icon(
                   Icons.timeline,
                   color: AppColors.primary,
                   size: 20,
@@ -1115,14 +1112,14 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
                   width: 1,
                 ),
               ),
-              child: Row(
+              child: const Row(
                 children: [
                   Icon(
                     Icons.info_outline,
                     size: 18,
                     color: AppColors.warning,
                   ),
-                  const SizedBox(width: 8),
+                  SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       'Minimal 7 foto diperlukan untuk akurasi optimal',
@@ -1342,7 +1339,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
                   color: AppColors.error.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Icon(
+                child: const Icon(
                   Icons.warning_amber_rounded,
                   color: AppColors.error,
                   size: 24,
@@ -1370,14 +1367,14 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
                 width: 1,
               ),
             ),
-            child: Row(
+            child: const Row(
               children: [
                 Icon(
                   Icons.info_outline,
                   color: AppColors.error,
                   size: 20,
                 ),
-                const SizedBox(width: 12),
+                SizedBox(width: 12),
                 Expanded(
                   child: Text(
                     'Menghapus user akan menghapus semua data terkait termasuk foto wajah dan riwayat kehadiran.',
@@ -1407,7 +1404,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
               ),
               style: OutlinedButton.styleFrom(
                 foregroundColor: AppColors.error,
-                side: BorderSide(color: AppColors.error, width: 2),
+                side: const BorderSide(color: AppColors.error, width: 2),
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),

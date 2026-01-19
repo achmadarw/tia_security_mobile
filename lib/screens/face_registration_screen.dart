@@ -1,7 +1,6 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'dart:io';
-import 'dart:ui';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:image/image.dart' as img;
 import '../models/user.dart';
@@ -46,7 +45,7 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
   DateTime? _neutralStepStartTime; // Track when neutral step started
   bool _isUploading = false;
 
-  List<File> _capturedImages = [];
+  final List<File> _capturedImages = [];
   final int _requiredImages =
       7; // 7 liveness photos: blink2, turnLeft, turnRight, tiltUp, tiltDown, smile, neutral
   final int _minImages = 7; // Require all 7 liveness photos
@@ -541,9 +540,7 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
         bool isNotSmiling = smiling < 0.3; // Not smiling
 
         // Initialize timer when entering neutral step
-        if (_neutralStepStartTime == null) {
-          _neutralStepStartTime = DateTime.now();
-        }
+        _neutralStepStartTime ??= DateTime.now();
 
         // Require 2 seconds in neutral state to ensure transition from smile
         final neutralDuration =
@@ -798,7 +795,7 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
 
           // Extract face region
           final boundingBox = face.boundingBox;
-          final padding = 40.0;
+          const padding = 40.0;
           final left = (boundingBox.left - padding)
               .clamp(0, decodedImage.width - 1)
               .toInt();
@@ -897,7 +894,7 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
           content: Text(
               'Foto wajah berhasil didaftarkan!\nKualitas: ${avgQuality.toStringAsFixed(0)}%'),
           backgroundColor: Colors.green,
-          duration: Duration(seconds: 3),
+          duration: const Duration(seconds: 3),
         ),
       );
 
@@ -916,7 +913,7 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
         SnackBar(
           content: Text('Error upload: $e'),
           backgroundColor: Colors.red,
-          duration: Duration(seconds: 4),
+          duration: const Duration(seconds: 4),
         ),
       );
     }
@@ -1188,11 +1185,11 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            CircularProgressIndicator(color: Colors.white),
+            const CircularProgressIndicator(color: Colors.white),
             const SizedBox(height: 16),
             Text(
               _statusMessage,
-              style: TextStyle(color: Colors.white),
+              style: const TextStyle(color: Colors.white),
             ),
           ],
         ),
@@ -1318,7 +1315,7 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
           LinearProgressIndicator(
             value: _capturedImages.length / _requiredImages,
             backgroundColor: Colors.white24,
-            valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+            valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primary),
           ),
         ],
       ),

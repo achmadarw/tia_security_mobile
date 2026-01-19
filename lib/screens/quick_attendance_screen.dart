@@ -24,8 +24,7 @@ enum LivenessStep {
 class QuickAttendanceScreen extends StatefulWidget {
   final AuthService authService;
 
-  const QuickAttendanceScreen({Key? key, required this.authService})
-      : super(key: key);
+  const QuickAttendanceScreen({super.key, required this.authService});
 
   @override
   State<QuickAttendanceScreen> createState() => _QuickAttendanceScreenState();
@@ -41,7 +40,7 @@ class _QuickAttendanceScreenState extends State<QuickAttendanceScreen> {
   bool _isProcessing = false;
   bool _isDetecting = false;
   bool _hasError = false;
-  bool _needsCheckoutConfirmation = false;
+  final bool _needsCheckoutConfirmation = false;
 
   String _statusMessage = 'Checking attendance status...';
   Color _statusColor = Colors.orange;
@@ -51,7 +50,7 @@ class _QuickAttendanceScreenState extends State<QuickAttendanceScreen> {
   // Liveness detection
   LivenessStep _currentLivenessStep = LivenessStep.initial;
   bool _eyesWereOpen = false;
-  List<File> _capturedImages = [];
+  final List<File> _capturedImages = [];
   int _currentStep = 0;
   final int _totalSteps = 1; // Only blink detection, no head turn
 
@@ -610,11 +609,11 @@ class _QuickAttendanceScreenState extends State<QuickAttendanceScreen> {
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
+        title: const Row(
           children: [
-            const Icon(Icons.logout, color: Colors.blue, size: 32),
-            const SizedBox(width: 12),
-            const Expanded(
+            Icon(Icons.logout, color: Colors.blue, size: 32),
+            SizedBox(width: 12),
+            Expanded(
               child: Text(
                 'Konfirmasi Check-Out',
                 style: TextStyle(
@@ -679,11 +678,11 @@ class _QuickAttendanceScreenState extends State<QuickAttendanceScreen> {
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
+        title: const Row(
           children: [
-            const Icon(Icons.info_outline, color: Colors.blue, size: 32),
-            const SizedBox(width: 12),
-            const Expanded(
+            Icon(Icons.info_outline, color: Colors.blue, size: 32),
+            SizedBox(width: 12),
+            Expanded(
               child: Text(
                 'Sudah Check-In',
                 style: TextStyle(
@@ -733,11 +732,11 @@ class _QuickAttendanceScreenState extends State<QuickAttendanceScreen> {
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
+        title: const Row(
           children: [
-            const Icon(Icons.schedule, color: Colors.orange, size: 32),
-            const SizedBox(width: 12),
-            const Expanded(
+            Icon(Icons.schedule, color: Colors.orange, size: 32),
+            SizedBox(width: 12),
+            Expanded(
               child: Text(
                 'Shift Belum Berakhir',
                 style: TextStyle(
@@ -1048,7 +1047,7 @@ class _QuickAttendanceScreenState extends State<QuickAttendanceScreen> {
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            'Step ${_currentStep}/$_totalSteps',
+                            'Step $_currentStep/$_totalSteps',
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 14,

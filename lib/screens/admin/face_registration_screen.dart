@@ -12,10 +12,10 @@ class FaceRegistrationScreen extends StatefulWidget {
   final String token;
 
   const FaceRegistrationScreen({
-    Key? key,
+    super.key,
     required this.user,
     required this.token,
-  }) : super(key: key);
+  });
 
   @override
   State<FaceRegistrationScreen> createState() => _FaceRegistrationScreenState();
@@ -35,8 +35,8 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
   Color _statusColor = Colors.orange;
 
   // Captured photos
-  List<File> _capturedPhotos = [];
-  List<List<double>> _embeddings = [];
+  final List<File> _capturedPhotos = [];
+  final List<List<double>> _embeddings = [];
 
   // Target: 10-15 photos from different angles
   final int _targetPhotos = 12;

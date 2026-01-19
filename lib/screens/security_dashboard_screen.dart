@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
-import 'dart:ui';
 import '../services/security_app_service.dart';
 import 'app_selector_screen.dart';
 import '../services/auth_service.dart';
@@ -15,10 +14,10 @@ class SecurityDashboardScreen extends StatefulWidget {
   final AuthService? authService;
 
   const SecurityDashboardScreen({
-    Key? key,
+    super.key,
     required this.sessionData,
     this.authService,
-  }) : super(key: key);
+  });
 
   @override
   State<SecurityDashboardScreen> createState() =>
@@ -345,7 +344,7 @@ class _SecurityDashboardScreenState extends State<SecurityDashboardScreen> {
                                 backgroundColor: Colors.white,
                                 child: Text(
                                   user['name'].toString()[0].toUpperCase(),
-                                  style: TextStyle(
+                                  style: const TextStyle(
                                     fontSize: 32,
                                     fontWeight: FontWeight.bold,
                                     color: AppColors.primary,
@@ -453,9 +452,9 @@ class _SecurityDashboardScreenState extends State<SecurityDashboardScreen> {
                         child: _isCheckingIn
                             ? const CircularProgressIndicator(
                                 color: Colors.white)
-                            : Row(
+                            : const Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
-                                children: const [
+                                children: [
                                   Icon(Icons.login, size: 28),
                                   SizedBox(width: 12),
                                   Text(
@@ -528,9 +527,9 @@ class _SecurityDashboardScreenState extends State<SecurityDashboardScreen> {
                         child: _isCheckingOut
                             ? const CircularProgressIndicator(
                                 color: Colors.white)
-                            : Row(
+                            : const Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
-                                children: const [
+                                children: [
                                   Icon(Icons.logout, size: 28),
                                   SizedBox(width: 12),
                                   Text(
@@ -595,9 +594,9 @@ class _SecurityDashboardScreenState extends State<SecurityDashboardScreen> {
                       ),
                       padding: const EdgeInsets.symmetric(vertical: 16),
                     ),
-                    child: Row(
+                    child: const Row(
                       mainAxisAlignment: MainAxisAlignment.center,
-                      children: const [
+                      children: [
                         Icon(Icons.power_settings_new),
                         SizedBox(width: 8),
                         Text('Akhiri Sesi & Keluar'),

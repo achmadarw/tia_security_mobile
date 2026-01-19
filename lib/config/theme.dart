@@ -185,7 +185,7 @@ class AppTheme {
     brightness: Brightness.light,
 
     // Color scheme
-    colorScheme: ColorScheme.light(
+    colorScheme: const ColorScheme.light(
       primary: AppColors.lightPrimary,
       primaryContainer: AppColors.lightPrimaryLight,
       onPrimary: AppColors.lightTextOnPrimary,
@@ -209,18 +209,18 @@ class AppTheme {
     ),
 
     // AppBar
-    appBarTheme: AppBarTheme(
+    appBarTheme: const AppBarTheme(
       backgroundColor: AppColors.lightPrimary,
       foregroundColor: Colors.white,
       elevation: 0,
       centerTitle: true,
-      titleTextStyle: const TextStyle(
+      titleTextStyle: TextStyle(
         fontSize: 20,
         fontWeight: FontWeight.w600,
         color: Colors.white,
         letterSpacing: 0.15,
       ),
-      iconTheme: const IconThemeData(
+      iconTheme: IconThemeData(
         color: Colors.white,
         size: 26, // Larger icons
       ),
@@ -266,7 +266,7 @@ class AppTheme {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
         ),
-        side: BorderSide(color: AppColors.lightPrimary, width: 2),
+        side: const BorderSide(color: AppColors.lightPrimary, width: 2),
         textStyle: const TextStyle(
           fontSize: 16,
           fontWeight: FontWeight.w600,
@@ -286,7 +286,7 @@ class AppTheme {
     ),
 
     // Icon theme
-    iconTheme: IconThemeData(
+    iconTheme: const IconThemeData(
       color: AppColors.lightTextPrimary,
       size: 26, // Larger icons for better visibility
     ),
@@ -297,11 +297,11 @@ class AppTheme {
       fillColor: AppColors.lightSurface,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: AppColors.borderLight, width: 1.5),
+        borderSide: const BorderSide(color: AppColors.borderLight, width: 1.5),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: AppColors.borderLight, width: 1.5),
+        borderSide: const BorderSide(color: AppColors.borderLight, width: 1.5),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
@@ -316,35 +316,35 @@ class AppTheme {
         borderSide: const BorderSide(color: AppColors.error, width: 2.5),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-      labelStyle: TextStyle(
+      labelStyle: const TextStyle(
         fontSize: 16,
         color: AppColors.lightTextSecondary,
       ),
-      hintStyle: TextStyle(
+      hintStyle: const TextStyle(
         fontSize: 16,
         color: AppColors.lightTextTertiary,
       ),
     ),
 
     // Divider
-    dividerTheme: DividerThemeData(
+    dividerTheme: const DividerThemeData(
       color: AppColors.dividerLight,
       thickness: 1,
       space: 16,
     ),
 
     // Bottom Navigation Bar
-    bottomNavigationBarTheme: BottomNavigationBarThemeData(
+    bottomNavigationBarTheme: const BottomNavigationBarThemeData(
       backgroundColor: AppColors.lightSurface,
       selectedItemColor: AppColors.lightPrimary,
       unselectedItemColor: AppColors.lightTextSecondary,
-      selectedIconTheme: const IconThemeData(size: 28),
-      unselectedIconTheme: const IconThemeData(size: 26),
-      selectedLabelStyle: const TextStyle(
+      selectedIconTheme: IconThemeData(size: 28),
+      unselectedIconTheme: IconThemeData(size: 26),
+      selectedLabelStyle: TextStyle(
         fontSize: 13,
         fontWeight: FontWeight.w600,
       ),
-      unselectedLabelStyle: const TextStyle(
+      unselectedLabelStyle: TextStyle(
         fontSize: 12,
         fontWeight: FontWeight.normal,
       ),
@@ -359,7 +359,7 @@ class AppTheme {
     brightness: Brightness.dark,
 
     // Color scheme
-    colorScheme: ColorScheme.dark(
+    colorScheme: const ColorScheme.dark(
       primary: AppColors.darkPrimary,
       primaryContainer: AppColors.darkPrimaryDark,
       onPrimary: AppColors.darkTextOnPrimary,
@@ -383,7 +383,7 @@ class AppTheme {
     ),
 
     // AppBar
-    appBarTheme: AppBarTheme(
+    appBarTheme: const AppBarTheme(
       backgroundColor: AppColors.darkSurface,
       foregroundColor: AppColors.darkTextPrimary,
       elevation: 0,
@@ -438,7 +438,7 @@ class AppTheme {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
         ),
-        side: BorderSide(color: AppColors.darkPrimary, width: 2),
+        side: const BorderSide(color: AppColors.darkPrimary, width: 2),
         textStyle: const TextStyle(
           fontSize: 16,
           fontWeight: FontWeight.w600,
@@ -458,7 +458,7 @@ class AppTheme {
     ),
 
     // Icon theme
-    iconTheme: IconThemeData(
+    iconTheme: const IconThemeData(
       color: AppColors.darkTextPrimary,
       size: 26,
     ),
@@ -469,54 +469,54 @@ class AppTheme {
       fillColor: AppColors.darkSurfaceVariant,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: AppColors.borderDark, width: 1.5),
+        borderSide: const BorderSide(color: AppColors.borderDark, width: 1.5),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: AppColors.borderDark, width: 1.5),
+        borderSide: const BorderSide(color: AppColors.borderDark, width: 1.5),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: AppColors.darkPrimary, width: 2.5),
+        borderSide: const BorderSide(color: AppColors.darkPrimary, width: 2.5),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: AppColors.errorDark, width: 1.5),
+        borderSide: const BorderSide(color: AppColors.errorDark, width: 1.5),
       ),
       focusedErrorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: AppColors.errorDark, width: 2.5),
+        borderSide: const BorderSide(color: AppColors.errorDark, width: 2.5),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-      labelStyle: TextStyle(
+      labelStyle: const TextStyle(
         fontSize: 16,
         color: AppColors.darkTextSecondary,
       ),
-      hintStyle: TextStyle(
+      hintStyle: const TextStyle(
         fontSize: 16,
         color: AppColors.darkTextTertiary,
       ),
     ),
 
     // Divider
-    dividerTheme: DividerThemeData(
+    dividerTheme: const DividerThemeData(
       color: AppColors.dividerDark,
       thickness: 1,
       space: 16,
     ),
 
     // Bottom Navigation Bar
-    bottomNavigationBarTheme: BottomNavigationBarThemeData(
+    bottomNavigationBarTheme: const BottomNavigationBarThemeData(
       backgroundColor: AppColors.darkSurface,
       selectedItemColor: AppColors.darkPrimary,
       unselectedItemColor: AppColors.darkTextSecondary,
-      selectedIconTheme: const IconThemeData(size: 28),
-      unselectedIconTheme: const IconThemeData(size: 26),
-      selectedLabelStyle: const TextStyle(
+      selectedIconTheme: IconThemeData(size: 28),
+      unselectedIconTheme: IconThemeData(size: 26),
+      selectedLabelStyle: TextStyle(
         fontSize: 13,
         fontWeight: FontWeight.w600,
       ),
-      unselectedLabelStyle: const TextStyle(
+      unselectedLabelStyle: TextStyle(
         fontSize: 12,
         fontWeight: FontWeight.normal,
       ),

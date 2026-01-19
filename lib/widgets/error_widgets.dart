@@ -9,13 +9,13 @@ class ErrorMessage extends StatelessWidget {
   final Color? backgroundColor;
 
   const ErrorMessage({
-    Key? key,
+    super.key,
     required this.message,
     this.onRetry,
     this.showRetryButton = true,
     this.icon = Icons.error_outline,
     this.backgroundColor,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -170,9 +170,9 @@ class InlineError extends StatelessWidget {
   final String message;
 
   const InlineError({
-    Key? key,
+    super.key,
     required this.message,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

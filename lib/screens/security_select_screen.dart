@@ -14,11 +14,11 @@ class SecuritySelectScreen extends StatefulWidget {
   final List<Map<String, dynamic>> roster;
 
   const SecuritySelectScreen({
-    Key? key,
+    super.key,
     required this.posToken,
     required this.posInfo,
     required this.roster,
-  }) : super(key: key);
+  });
 
   @override
   State<SecuritySelectScreen> createState() => _SecuritySelectScreenState();

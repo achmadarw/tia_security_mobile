@@ -4,8 +4,6 @@ import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
-import 'dart:ui';
 import '../services/security_app_service.dart';
 import '../utils/app_toast.dart';
 import '../services/auth_service.dart';
@@ -21,10 +19,10 @@ class SecurityHomeScreen extends StatefulWidget {
   final AuthService? authService;
 
   const SecurityHomeScreen({
-    Key? key,
+    super.key,
     required this.sessionData,
     this.authService,
-  }) : super(key: key);
+  });
 
   @override
   State<SecurityHomeScreen> createState() => _SecurityHomeScreenState();
@@ -34,7 +32,7 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
     with TickerProviderStateMixin {
   Map<String, dynamic>? _selectedPersonil;
   bool _hasActiveSession = false;
-  List<Map<String, dynamic>> _todayTimeline = [];
+  final List<Map<String, dynamic>> _todayTimeline = [];
   String _statusText = 'Belum Check-in';
   int _selectedIndex = 0;
   String _checkInTime = '--:--';
@@ -84,7 +82,7 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
       // Ensure pattern exists, use pattern from sessionData if not in user
       if (_selectedPersonil != null &&
           (_selectedPersonil!['pattern'] == null ||
-              !(_selectedPersonil!['pattern'] is Map))) {
+              _selectedPersonil!['pattern'] is! Map)) {
         if (widget.sessionData.containsKey('pattern')) {
           _selectedPersonil!['pattern'] = widget.sessionData['pattern'];
         }
@@ -351,7 +349,7 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            (pos is Map && pos['name'] != null)
+                            (pos['name'] != null)
                                 ? pos['name']
                                 : 'Pos Security',
                             style: TextStyle(
@@ -365,10 +363,9 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            (pos is Map && pos['address'] != null)
+                            (pos['address'] != null)
                                 ? pos['address']
-                                : (pos is Map &&
-                                        pos['location_description'] != null)
+                                : (pos['location_description'] != null)
                                     ? pos['location_description']
                                     : 'Area Perumahan',
                             style: TextStyle(
@@ -929,7 +926,7 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
                           const SizedBox(height: 6),
                           Row(
                             children: [
-                              Icon(
+                              const Icon(
                                 Icons.location_on,
                                 size: 14,
                                 color: Colors.green,
@@ -937,7 +934,7 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
                               const SizedBox(width: 4),
                               Text(
                                 posLocation,
-                                style: TextStyle(
+                                style: const TextStyle(
                                   color: Colors.green,
                                   fontSize: 12,
                                   fontWeight: FontWeight.w600,
@@ -1293,7 +1290,7 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
                             isCompact: false,
                           ),
                         );
-                      }).toList(),
+                      }),
                       const SizedBox(height: 20),
                     ],
 
@@ -1626,7 +1623,7 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
                         Container(
                           width: 4,
                           height: 4,
-                          decoration: BoxDecoration(
+                          decoration: const BoxDecoration(
                             color: Colors.grey,
                             shape: BoxShape.circle,
                           ),
@@ -2466,7 +2463,7 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
                     backgroundColor: AppColors.primary.withOpacity(0.1),
                     child: Text(
                       person['name'].toString()[0].toUpperCase(),
-                      style: TextStyle(
+                      style: const TextStyle(
                           color: AppColors.primary,
                           fontWeight: FontWeight.bold),
                     ),

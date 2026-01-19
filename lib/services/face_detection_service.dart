@@ -197,7 +197,7 @@ class FaceDetectionService {
     final boundingBox = face.boundingBox;
 
     // Add padding (10%)
-    final padding = 0.1;
+    const padding = 0.1;
     final paddedLeft = (boundingBox.left - (boundingBox.width * padding))
         .clamp(0, image.width)
         .toInt();

@@ -7,9 +7,9 @@ class AppSelectorScreen extends StatelessWidget {
   final AuthService authService;
 
   const AppSelectorScreen({
-    Key? key,
+    super.key,
     required this.authService,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
