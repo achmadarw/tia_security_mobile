@@ -54,13 +54,19 @@ class _ActivePatrolScreenState extends State<ActivePatrolScreen> {
     setState(() => _isLoading = true);
 
     try {
-      // Load current patrol session
+      // Load current patrol session (this will also fetch and setup blocks if needed)
       await _patrolService.loadCurrentSession();
       _currentSession = _patrolService.currentSession;
 
       if (_currentSession == null) {
         throw Exception('Tidak ada sesi patroli aktif');
       }
+
+      // Wait a bit for zones to be setup
+      await Future.delayed(const Duration(milliseconds: 500));
+
+      print(
+          '[ActivePatrol] Geofence zones available: ${_geofencingService.zones.length}');
 
       // Start GPS tracking
       await _gpsService.startTracking();
@@ -106,22 +112,21 @@ class _ActivePatrolScreenState extends State<ActivePatrolScreen> {
     setState(() {
       _currentPosition = position;
 
-      // Add to route
-      final latLng = LatLng(position.latitude, position.longitude);
-      _routePoints.add(latLng);
-
-      // Update current position marker
-      _markers.removeWhere((m) => m.markerId.value == 'current_position');
+      // Update marker
+      _markers.clear();
       _markers.add(
         Marker(
           markerId: const MarkerId('current_position'),
-          position: latLng,
+          position: LatLng(position.latitude, position.longitude),
           icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
-          infoWindow: const InfoWindow(title: 'Posisi Saya'),
+          infoWindow: const InfoWindow(title: 'Lokasi Anda'),
         ),
       );
 
-      // Update polyline (route trail)
+      // Add to route
+      _routePoints.add(LatLng(position.latitude, position.longitude));
+
+      // Update polyline
       _polylines.clear();
       _polylines.add(
         Polyline(
@@ -131,74 +136,57 @@ class _ActivePatrolScreenState extends State<ActivePatrolScreen> {
           width: 4,
         ),
       );
-
-      // Move camera to current position
-      _mapController?.animateCamera(
-        CameraUpdate.newLatLng(latLng),
-      );
     });
 
-    // Update geofencing service
+    // Move camera to follow position
+    _mapController?.animateCamera(
+      CameraUpdate.newCameraPosition(
+        CameraPosition(
+          target: LatLng(position.latitude, position.longitude),
+          zoom: 17,
+        ),
+      ),
+    );
+
+    // Update geofencing with current position
     _geofencingService.updatePosition(position);
   }
 
   void _handleGeofenceEvent(GeofenceEvent event) {
     print('[ActivePatrol] Geofence event: ${event.type} - ${event.zone.name}');
 
+    // Update visited blocks tracking using Set to avoid duplicates
     if (event.type == GeofenceEventType.enter) {
-      // Mark block as visited
       if (!_visitedBlockNames.contains(event.zone.name)) {
         _visitedBlockNames.add(event.zone.name);
         setState(() {
           _currentBlock = event.zone.name;
-          _visitedBlocks = _visitedBlockNames.length;
+          _visitedBlocks = _visitedBlockNames.length; // Use Set size
         });
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-                '✓ ${event.zone.name} dikunjungi (${_visitedBlocks}/${_geofencingService.zones.length})'),
+            content: Text('✅ Memasuki blok: ${event.zone.name}'),
             backgroundColor: Colors.green,
             duration: const Duration(seconds: 2),
           ),
         );
-      } else {
-        setState(() {
-          _currentBlock = event.zone.name;
-        });
       }
-
-      // Add checkpoint marker
-      _markers.add(
-        Marker(
-          markerId: MarkerId('checkpoint_${event.zone.name}'),
-          position: LatLng(event.position.latitude, event.position.longitude),
-          icon:
-              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
-          infoWindow: InfoWindow(
-            title: event.zone.name,
-            snippet: 'Checkpoint',
-          ),
-        ),
-      );
     } else if (event.type == GeofenceEventType.exit) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Meninggalkan ${event.zone.name}'),
-          backgroundColor: Colors.orange,
-          duration: const Duration(seconds: 2),
-        ),
-      );
+      setState(() {
+        _currentBlock = null;
+      });
     }
   }
 
-  Future<void> _stopPatrol() async {
-    final confirmed = await showDialog<bool>(
+  void _stopPatrol() async {
+    // Confirm dialog
+    final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Selesaikan Patroli?'),
-        content: const Text(
-          'Apakah Anda yakin ingin menyelesaikan patroli? Anda dapat menambahkan catatan pada halaman berikutnya.',
+        title: const Text('Selesaikan Patrol?'),
+        content: Text(
+          'Anda telah mengunjungi $_visitedBlocks dari ${_geofencingService.zones.length} blok.\n\nSelesaikan patrol sekarang?',
         ),
         actions: [
           TextButton(
@@ -207,30 +195,124 @@ class _ActivePatrolScreenState extends State<ActivePatrolScreen> {
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Ya, Selesaikan'),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Selesai'),
           ),
         ],
       ),
     );
 
-    if (confirmed == true) {
-      // Stop GPS tracking
-      await _gpsService.stopTracking();
+    if (confirm != true) return;
 
-      // Navigate to completion screen
+    setState(() => _isLoading = true);
+
+    try {
+      // Get current position (fallback if _currentPosition is null)
+      Position? endPosition = _currentPosition;
+
+      if (endPosition == null) {
+        print('[ActivePatrol] Getting current GPS position...');
+        endPosition = await _gpsService.getCurrentPosition();
+      }
+
+      if (endPosition == null) {
+        throw Exception(
+            'Tidak dapat mengambil lokasi GPS. Pastikan GPS aktif.');
+      }
+
+      if (_currentSession != null) {
+        // Save stats before completing
+        final duration = _formatDuration(_patrolDuration);
+        final visitedBlocks = _visitedBlocks;
+        final totalBlocks = _geofencingService.zones.length;
+
+        // Complete patrol
+        final result = await _patrolService.completePatrol(
+          endLat: endPosition.latitude,
+          endLng: endPosition.longitude,
+          notes:
+              'Patroli selesai. $visitedBlocks dari $totalBlocks blok dikunjungi.',
+        );
+
+        // Stop tracking
+        await _gpsService.stopTracking();
+        _durationTimer?.cancel();
+        _zonesCheckTimer?.cancel();
+
+        // Show success dialog and return to home
+        if (mounted) {
+          await showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => AlertDialog(
+              title: const Row(
+                children: [
+                  Icon(Icons.check_circle, color: Colors.green, size: 32),
+                  SizedBox(width: 12),
+                  Text('Patroli Selesai'),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Patroli telah berhasil diselesaikan.'),
+                  const SizedBox(height: 16),
+                  _buildSummaryItem('Durasi', duration),
+                  _buildSummaryItem(
+                      'Blok Dikunjungi', '$visitedBlocks/$totalBlocks'),
+                  if (result['data'] != null &&
+                      result['data']['statistics'] != null)
+                    _buildSummaryItem(
+                      'Titik GPS',
+                      '${result['data']['statistics']['total_track_points'] ?? 0}',
+                    ),
+                ],
+              ),
+              actions: [
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(context); // Close dialog
+                    Navigator.pop(context); // Back to home screen
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      print('[ActivePatrol] Error stopping patrol: $e');
       if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => const PatrolCompleteScreen(),
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
           ),
         );
       }
+      setState(() => _isLoading = false);
     }
+  }
+
+  double _calculateTotalDistance() {
+    if (_routePoints.length < 2) return 0.0;
+
+    double totalDistance = 0.0;
+    for (int i = 0; i < _routePoints.length - 1; i++) {
+      totalDistance += Geolocator.distanceBetween(
+        _routePoints[i].latitude,
+        _routePoints[i].longitude,
+        _routePoints[i + 1].latitude,
+        _routePoints[i + 1].longitude,
+      );
+    }
+    return totalDistance;
   }
 
   @override
@@ -249,72 +331,152 @@ class _ActivePatrolScreenState extends State<ActivePatrolScreen> {
 
     if (_isLoading) {
       return Scaffold(
-        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        backgroundColor: isDark ? AppColors.darkBackground : Colors.white,
         body: const Center(child: CircularProgressIndicator()),
       );
     }
 
     if (_errorMessage != null) {
       return Scaffold(
-        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        backgroundColor: isDark ? AppColors.darkBackground : Colors.white,
         appBar: AppBar(
-          title: const Text('Error'),
+          title: const Text('Patrol Aktif'),
           backgroundColor:
               isDark ? AppColors.darkSurface : AppColors.lightPrimary,
         ),
         body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.error_outline, size: 64, color: Colors.red),
-                const SizedBox(height: 16),
-                Text(
-                  _errorMessage!,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 16),
-                ),
-                const SizedBox(height: 24),
-                ElevatedButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Kembali'),
-                ),
-              ],
-            ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline, size: 64, color: Colors.red),
+              const SizedBox(height: 16),
+              Text(_errorMessage!),
+              const SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Kembali'),
+              ),
+            ],
           ),
         ),
       );
     }
 
     return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      body: Stack(
+      backgroundColor: isDark ? AppColors.darkBackground : Colors.white,
+      body: SafeArea(
+        child: Column(
+          children: [
+            // Top panel (stats header)
+            _buildTopPanel(),
+
+            // Map/Visual rute (takes remaining space)
+            Expanded(
+              child: _buildMap(),
+            ),
+          ],
+        ),
+      ),
+      floatingActionButton: _buildStopButton(),
+    );
+  }
+
+  Widget _buildTopPanel() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Container(
+      margin: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.darkSurface : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
         children: [
-          // Google Maps
-          _buildMap(),
-
-          // Top info panel
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: _buildTopPanel(isDark),
+          Row(
+            children: [
+              Icon(
+                Icons.security,
+                color: isDark ? AppColors.darkPrimary : AppColors.lightPrimary,
+                size: 24,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Patroli Aktif',
+                  style: TextStyle(
+                    color: isDark
+                        ? AppColors.darkTextPrimary
+                        : AppColors.textPrimary,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.gps_fixed, color: Colors.green, size: 16),
+                    SizedBox(width: 4),
+                    Text(
+                      'Aktif',
+                      style: TextStyle(
+                        color: Colors.green,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-
-          // Bottom stats panel
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: _buildBottomPanel(isDark),
-          ),
-
-          // Stop button (floating)
-          Positioned(
-            bottom: 200,
-            right: 16,
-            child: _buildStopButton(),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _buildStatCard(
+                  label: 'Durasi',
+                  value: _formatDuration(_patrolDuration),
+                  icon: Icons.timer,
+                  color: Colors.blue,
+                  isDark: isDark,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildStatCard(
+                  label: 'Blok Dikunjungi',
+                  value: '$_visitedBlocks/${_geofencingService.zones.length}',
+                  icon: Icons.location_on,
+                  color: Colors.orange,
+                  isDark: isDark,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildStatCard(
+                  label: 'Blok Saat Ini',
+                  value: _currentBlock ?? '-',
+                  icon: Icons.my_location,
+                  color: Colors.green,
+                  isDark: isDark,
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -363,104 +525,99 @@ class _ActivePatrolScreenState extends State<ActivePatrolScreen> {
 
     return Container(
       color: isDark ? AppColors.darkCard : Colors.grey.shade50,
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.only(top: 140), // Space for top panel
-          child: Column(
-            children: [
-              // Progress header
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: isDark ? AppColors.darkSurface : Colors.white,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 4,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
+      child: Column(
+        children: [
+          // Progress header
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: isDark ? AppColors.darkSurface : Colors.white,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
                 ),
-                child: Column(
+              ],
+            ),
+            child: Column(
+              children: [
+                Row(
                   children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.route,
-                          color: isDark
-                              ? AppColors.darkPrimary
-                              : AppColors.lightPrimary,
-                          size: 24,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Rute Patrol - $totalBlocks Blok',
-                                style: TextStyle(
-                                  color: isDark
-                                      ? AppColors.darkTextPrimary
-                                      : AppColors.textPrimary,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                '$visitedCount dari $totalBlocks blok dikunjungi ($progressPercent%)',
-                                style: TextStyle(
-                                  color: isDark
-                                      ? AppColors.darkTextSecondary
-                                      : AppColors.textSecondary,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        CircularProgressIndicator(
-                          value: visitedCount / totalBlocks,
-                          backgroundColor: Colors.grey.shade300,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            progressPercent == 100 ? Colors.green : Colors.blue,
-                          ),
-                          strokeWidth: 6,
-                        ),
-                      ],
+                    Icon(
+                      Icons.route,
+                      color: isDark
+                          ? AppColors.darkPrimary
+                          : AppColors.lightPrimary,
+                      size: 24,
                     ),
-                    const SizedBox(height: 12),
-                    // Progress bar
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: LinearProgressIndicator(
-                        value: visitedCount / totalBlocks,
-                        minHeight: 8,
-                        backgroundColor: Colors.grey.shade300,
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                          progressPercent == 100 ? Colors.green : Colors.blue,
-                        ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Rute Patrol - $totalBlocks Blok',
+                            style: TextStyle(
+                              color: isDark
+                                  ? AppColors.darkTextPrimary
+                                  : AppColors.textPrimary,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '$visitedCount dari $totalBlocks blok dikunjungi ($progressPercent%)',
+                            style: TextStyle(
+                              color: isDark
+                                  ? AppColors.darkTextSecondary
+                                  : AppColors.textSecondary,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
+                    CircularProgressIndicator(
+                      value: visitedCount / totalBlocks,
+                      backgroundColor: Colors.grey.shade300,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        progressPercent == 100 ? Colors.green : Colors.blue,
+                      ),
+                      strokeWidth: 6,
+                    ),
                   ],
                 ),
-              ),
-
-              // Block list with route visualization
-              Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: geofenceZones.length,
-                  itemBuilder: (context, index) {
-                    final zone = geofenceZones[index];
-                    return _buildBlockRouteItem(zone, index, isDark);
-                  },
+                const SizedBox(height: 12),
+                // Progress bar
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: LinearProgressIndicator(
+                    value: visitedCount / totalBlocks,
+                    minHeight: 8,
+                    backgroundColor: Colors.grey.shade300,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      progressPercent == 100 ? Colors.green : Colors.blue,
+                    ),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
+
+          // Block list with route visualization
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: geofenceZones.length,
+              itemBuilder: (context, index) {
+                final zone = geofenceZones[index];
+                return _buildBlockRouteItem(zone, index, isDark);
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -475,101 +632,71 @@ class _ActivePatrolScreenState extends State<ActivePatrolScreen> {
     final isVisited = _visitedBlockNames.contains(zone.name);
     final isCurrentBlock = _currentBlock == zone.name;
 
-    // Calculate distance from current position
+    // Calculate distance from current position using Geolocator
     double? distance;
     if (_currentPosition != null) {
-      final lat1 = _currentPosition!.latitude;
-      final lon1 = _currentPosition!.longitude;
-      final lat2 = zone.latitude;
-      final lon2 = zone.longitude;
-      distance = _calculateDistance(lat1, lon1, lat2, lon2);
+      distance = Geolocator.distanceBetween(
+        _currentPosition!.latitude,
+        _currentPosition!.longitude,
+        zone.latitude,
+        zone.longitude,
+      );
     }
-
-    final isNearby = distance != null && distance < zone.radiusMeters;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Route line connector
-          Column(
-            children: [
-              // Status icon
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: isVisited
-                      ? Colors.green
-                      : isCurrentBlock
-                          ? Colors.blue
-                          : isNearby
-                              ? Colors.orange
-                              : Colors.grey.shade300,
-                  border: Border.all(
-                    color: isCurrentBlock
-                        ? Colors.blue.shade700
-                        : Colors.transparent,
-                    width: 3,
-                  ),
+      decoration: BoxDecoration(
+        color: isCurrentBlock
+            ? (isDark ? Colors.blue.shade900 : Colors.blue.shade50)
+            : (isDark ? AppColors.darkSurface : Colors.white),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isCurrentBlock
+              ? Colors.blue
+              : (isDark ? Colors.grey.shade700 : Colors.grey.shade300),
+          width: isCurrentBlock ? 2 : 1,
+        ),
+        boxShadow: isCurrentBlock
+            ? [
+                BoxShadow(
+                  color: Colors.blue.withOpacity(0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
                 ),
-                child: Icon(
-                  isVisited
-                      ? Icons.check_circle
-                      : isCurrentBlock
-                          ? Icons.my_location
-                          : isNearby
-                              ? Icons.near_me
-                              : Icons.circle_outlined,
-                  color: isVisited || isCurrentBlock || isNearby
-                      ? Colors.white
-                      : Colors.grey.shade600,
-                  size: 20,
-                ),
-              ),
-
-              // Connector line to next block
-              if (index < _geofencingService.zones.length - 1)
-                Container(
-                  width: 2,
-                  height: 40,
-                  color:
-                      isVisited ? Colors.green.shade300 : Colors.grey.shade300,
-                ),
-            ],
-          ),
-
-          const SizedBox(width: 12),
-
-          // Block info card
-          Expanded(
-            child: Container(
-              padding: const EdgeInsets.all(12),
+              ]
+            : [],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            // Route number & checkmark
+            Container(
+              width: 40,
+              height: 40,
               decoration: BoxDecoration(
-                color: isCurrentBlock
-                    ? Colors.blue.shade50
-                    : isDark
-                        ? AppColors.darkSurface
-                        : Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: isCurrentBlock
-                      ? Colors.blue
-                      : isNearby
-                          ? Colors.orange
-                          : Colors.grey.shade300,
-                  width: isCurrentBlock ? 2 : 1,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 4,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
+                color: isVisited
+                    ? Colors.green
+                    : (isDark ? Colors.grey.shade700 : Colors.grey.shade300),
+                shape: BoxShape.circle,
               ),
+              child: Center(
+                child: isVisited
+                    ? const Icon(Icons.check, color: Colors.white, size: 20)
+                    : Text(
+                        '${index + 1}',
+                        style: TextStyle(
+                          color: isDark ? Colors.white : Colors.black87,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+              ),
+            ),
+            const SizedBox(width: 16),
+
+            // Block info
+            Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -583,366 +710,93 @@ class _ActivePatrolScreenState extends State<ActivePatrolScreen> {
                                 ? AppColors.darkTextPrimary
                                 : AppColors.textPrimary,
                             fontSize: 16,
-                            fontWeight: isCurrentBlock
-                                ? FontWeight.bold
-                                : FontWeight.w600,
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
                       ),
-                      if (isVisited)
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.green.shade100,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.check, size: 14, color: Colors.green),
-                              SizedBox(width: 4),
-                              Text(
-                                'Dikunjungi',
-                                style: TextStyle(
-                                  color: Colors.green,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
                       if (isCurrentBlock)
                         Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
+                              horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
-                            color: Colors.blue.shade100,
-                            borderRadius: BorderRadius.circular(8),
+                            color: Colors.blue,
+                            borderRadius: BorderRadius.circular(12),
                           ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.my_location,
-                                  size: 14, color: Colors.blue),
-                              SizedBox(width: 4),
-                              Text(
-                                'Di Lokasi',
-                                style: TextStyle(
-                                  color: Colors.blue,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
+                          child: const Text(
+                            'Lokasi Anda',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                     ],
                   ),
-
-                  if (distance != null) ...[
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.near_me,
-                          size: 14,
-                          color: isDark
-                              ? AppColors.darkTextSecondary
-                              : AppColors.textSecondary,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          distance < 1000
-                              ? '${distance.round()} meter'
-                              : '${(distance / 1000).toStringAsFixed(1)} km',
-                          style: TextStyle(
-                            color: isNearby
-                                ? Colors.orange
-                                : isDark
-                                    ? AppColors.darkTextSecondary
-                                    : AppColors.textSecondary,
-                            fontSize: 12,
-                            fontWeight:
-                                isNearby ? FontWeight.bold : FontWeight.normal,
-                          ),
-                        ),
-                        if (isNearby) ...[
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.orange.shade100,
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: const Text(
-                              'DEKAT',
-                              style: TextStyle(
-                                color: Colors.orange,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ],
-
-                  // Coordinates (small text)
                   const SizedBox(height: 4),
-                  Text(
-                    'Lat: ${zone.latitude.toStringAsFixed(6)}, Lng: ${zone.longitude.toStringAsFixed(6)}',
-                    style: TextStyle(
-                      color: Colors.grey.shade500,
-                      fontSize: 10,
-                      fontFamily: 'monospace',
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Calculate distance between two points in meters (Haversine formula)
-  double _calculateDistance(
-      double lat1, double lon1, double lat2, double lon2) {
-    const double earthRadius = 6371000; // meters
-    final dLat = _toRadians(lat2 - lat1);
-    final dLon = _toRadians(lon2 - lon1);
-
-    final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
-        math.cos(_toRadians(lat1)) *
-            math.cos(_toRadians(lat2)) *
-            math.sin(dLon / 2) *
-            math.sin(dLon / 2);
-
-    final c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
-    return earthRadius * c;
-  }
-
-  double _toRadians(double degree) {
-    return degree * math.pi / 180;
-  }
-
-  Widget _buildTopPanel(bool isDark) {
-    return Container(
-      margin: const EdgeInsets.only(top: 48, left: 16, right: 16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: isDark
-            ? AppColors.darkCard.withOpacity(0.95)
-            : Colors.white.withOpacity(0.95),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.green.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(
-                  Icons.navigate_next,
-                  color: Colors.green,
-                  size: 24,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Patroli Aktif',
-                      style: TextStyle(
-                        color: isDark
-                            ? AppColors.darkTextPrimary
-                            : AppColors.textPrimary,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Text(
-                      _currentBlock ?? 'Belum ada blok',
-                      style: TextStyle(
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.location_on,
+                        size: 14,
                         color: isDark
                             ? AppColors.darkTextSecondary
                             : AppColors.textSecondary,
-                        fontSize: 14,
                       ),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.green,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.circle, color: Colors.white, size: 8),
-                    const SizedBox(width: 6),
-                    Text(
-                      _formatDuration(_patrolDuration),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
+                      const SizedBox(width: 4),
+                      Text(
+                        distance != null
+                            ? distance < 1000
+                                ? '${distance.toStringAsFixed(0)} m'
+                                : '${(distance / 1000).toStringAsFixed(2)} km'
+                            : 'Menghitung...',
+                        style: TextStyle(
+                          color: isDark
+                              ? AppColors.darkTextSecondary
+                              : AppColors.textSecondary,
+                          fontSize: 12,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBottomPanel(bool isDark) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: isDark ? AppColors.darkCard : Colors.white,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 8,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Drag handle
-          Container(
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: Colors.grey.shade300,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          const SizedBox(height: 20),
-
-          // Stats grid
-          Row(
-            children: [
-              Expanded(
-                child: _buildStatItem(
-                  icon: Icons.location_on,
-                  label: 'Blok Dikunjungi',
-                  value: '$_visitedBlocks',
-                  color: Colors.blue,
-                  isDark: isDark,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildStatItem(
-                  icon: Icons.route,
-                  label: 'Titik GPS',
-                  value: '${_routePoints.length}',
-                  color: Colors.orange,
-                  isDark: isDark,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildStatItem(
-                  icon: Icons.speed,
-                  label: 'Kecepatan',
-                  value: _currentPosition != null
-                      ? '${_currentPosition!.speed.toStringAsFixed(1)} m/s'
-                      : '0 m/s',
-                  color: Colors.green,
-                  isDark: isDark,
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 16),
-
-          // GPS accuracy info
-          if (_currentPosition != null)
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: isDark
-                    ? AppColors.darkPrimary.withOpacity(0.1)
-                    : AppColors.lightPrimary.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.gps_fixed,
-                    size: 16,
-                    color:
-                        isDark ? AppColors.darkPrimary : AppColors.lightPrimary,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Akurasi GPS: ${_currentPosition!.accuracy.toStringAsFixed(1)}m',
-                    style: TextStyle(
-                      color: isDark
-                          ? AppColors.darkTextSecondary
-                          : AppColors.textSecondary,
-                      fontSize: 12,
-                    ),
-                  ),
-                  const Spacer(),
-                  Text(
-                    'Update: 1 detik',
-                    style: TextStyle(
-                      color: isDark
-                          ? AppColors.darkTextSecondary
-                          : AppColors.textSecondary,
-                      fontSize: 12,
-                    ),
+                      if (isVisited) ...[
+                        const SizedBox(width: 12),
+                        Icon(
+                          Icons.check_circle,
+                          size: 14,
+                          color: Colors.green,
+                        ),
+                        const SizedBox(width: 4),
+                        const Text(
+                          'Dikunjungi',
+                          style: TextStyle(
+                            color: Colors.green,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ],
               ),
             ),
-        ],
+
+            // Arrow icon
+            Icon(
+              Icons.chevron_right,
+              color: isDark
+                  ? AppColors.darkTextSecondary
+                  : AppColors.textSecondary,
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildStatItem({
-    required IconData icon,
+  Widget _buildStatCard({
     required String label,
     required String value,
+    required IconData icon,
     required Color color,
     required bool isDark,
   }) {
@@ -990,6 +844,22 @@ class _ActivePatrolScreenState extends State<ActivePatrolScreen> {
           color: Colors.white,
           fontWeight: FontWeight.bold,
         ),
+      ),
+    );
+  }
+
+  Widget _buildSummaryItem(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(color: Colors.grey)),
+          Text(
+            value,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+        ],
       ),
     );
   }

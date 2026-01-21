@@ -7,10 +7,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/security_app_service.dart';
 import '../utils/app_toast.dart';
 import '../services/auth_service.dart';
+import '../services/patrol_service.dart';
 import '../config/theme.dart';
 import 'app_selector_screen.dart';
 import 'security_checkin_screen.dart';
 import 'security_personil_detail_screen.dart';
+import 'active_patrol_screen.dart';
 
 /// Security Home Screen V3
 /// Modern redesign matching community app UI/UX
@@ -2059,15 +2061,26 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
           Row(
             children: [
               Expanded(
-                child: _buildActionButton(
-                  icon: Icons.radio_button_checked,
-                  label: 'Mulai Patrol',
-                  color: Colors.blue,
-                  onTap: () {
-                    AppToast.info('Fitur Patrol - Segera Hadir');
+                child: FutureBuilder<bool>(
+                  future: _checkActivePatrol(),
+                  builder: (context, snapshot) {
+                    final hasActivePatrol = snapshot.data ?? false;
+                    // Enable button if has active session OR has active patrol
+                    final isEnabled = _hasActiveSession || hasActivePatrol;
+
+                    return _buildActionButton(
+                      icon: hasActivePatrol
+                          ? Icons.play_circle_filled
+                          : Icons.radio_button_checked,
+                      label:
+                          hasActivePatrol ? 'Lanjutkan Patrol' : 'Mulai Patrol',
+                      color: hasActivePatrol ? Colors.orange : Colors.blue,
+                      onTap: _handlePatrolAction,
+                      enabled: isEnabled,
+                      isDark: isDark,
+                      badge: hasActivePatrol ? '●' : null,
+                    );
                   },
-                  enabled: _hasActiveSession,
-                  isDark: isDark,
                 ),
               ),
               const SizedBox(width: 12),
@@ -2096,6 +2109,7 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
     required VoidCallback onTap,
     required bool enabled,
     required bool isDark,
+    String? badge,
   }) {
     final isEnabled = enabled;
     final buttonColor = isEnabled ? color : Colors.grey;
@@ -2105,43 +2119,71 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
       child: InkWell(
         onTap: isEnabled ? onTap : null,
         borderRadius: BorderRadius.circular(16),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 20),
-          decoration: BoxDecoration(
-            color: isDark
-                ? buttonColor.withOpacity(0.2)
-                : buttonColor.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: isDark
-                  ? buttonColor.withOpacity(0.3)
-                  : buttonColor.withOpacity(0.3),
-              width: 1.5,
-            ),
-          ),
-          child: Column(
-            children: [
-              Icon(
-                icon,
-                color: isEnabled
-                    ? (isDark ? buttonColor.withOpacity(0.8) : buttonColor)
-                    : Colors.grey.shade400,
-                size: 32,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                label,
-                style: TextStyle(
-                  color: isEnabled
-                      ? (isDark ? buttonColor.withOpacity(0.9) : buttonColor)
-                      : Colors.grey.shade500,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
+        child: Stack(
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 8),
+              decoration: BoxDecoration(
+                color: isDark
+                    ? buttonColor.withOpacity(0.2)
+                    : buttonColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: isDark
+                      ? buttonColor.withOpacity(0.3)
+                      : buttonColor.withOpacity(0.3),
+                  width: 1.5,
                 ),
-                textAlign: TextAlign.center,
               ),
-            ],
-          ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    icon,
+                    color: isEnabled
+                        ? (isDark ? buttonColor.withOpacity(0.8) : buttonColor)
+                        : Colors.grey.shade400,
+                    size: 32,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: isEnabled
+                          ? (isDark
+                              ? buttonColor.withOpacity(0.9)
+                              : buttonColor)
+                          : Colors.grey.shade500,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            // Badge indicator for active patrol
+            if (badge != null)
+              Positioned(
+                top: 6,
+                right: 6,
+                child: Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: Colors.orange,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: isDark ? AppColors.darkCard : Colors.white,
+                      width: 2,
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );
@@ -2671,6 +2713,55 @@ class _SecurityHomeScreenState extends State<SecurityHomeScreen>
     }
 
     await _selectPersonil();
+  }
+
+  Future<bool> _checkActivePatrol() async {
+    try {
+      final patrolService = PatrolService();
+      await patrolService.loadCurrentSession();
+      return patrolService.isPatrolActive;
+    } catch (e) {
+      print('[SecurityHome] Error checking patrol: $e');
+      return false;
+    }
+  }
+
+  Future<void> _handlePatrolAction() async {
+    // Check if there's an active patrol session
+    final patrolService = PatrolService();
+    await patrolService.loadCurrentSession();
+
+    if (patrolService.isPatrolActive) {
+      // Resume existing patrol
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const ActivePatrolScreen(),
+          ),
+        );
+      }
+    } else {
+      // Navigate to personil detail to start new patrol
+      if (_selectedPersonil != null) {
+        final result = await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => SecurityPersonilDetailScreen(
+              personil: _selectedPersonil!,
+              securityService: _service,
+            ),
+          ),
+        );
+
+        // Refresh data if patrol was started
+        if (result == true && mounted) {
+          _refreshRosterData();
+        }
+      } else {
+        AppToast.error('Pilih personil terlebih dahulu');
+      }
+    }
   }
 
   Future<void> _handleLogout() async {

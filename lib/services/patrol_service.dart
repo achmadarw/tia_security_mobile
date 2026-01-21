@@ -155,8 +155,11 @@ class PatrolService {
           await _gpsService.startTracking(intervalSeconds: 1);
 
           // Setup geofences from blocks
-          if (data['data']['blocks'] != null) {
-            _setupGeofences(data['data']['blocks']);
+          final blocks = data['data']['blocks'];
+          if (blocks != null) {
+            _setupGeofences(blocks);
+            // Save blocks to session for resume
+            await _saveBlocksData(blocks);
           }
 
           // Start tracking and syncing
@@ -186,12 +189,53 @@ class PatrolService {
     _geofenceService.clearZones();
 
     List<GeofenceZone> zones = blocks.map((block) {
+      // Parse coordinates safely (could be String or num from API)
+      double lat = 0.0;
+      double lng = 0.0;
+      double radius = 50.0;
+
+      try {
+        print('[Patrol] 🔍 Parsing block: ${block['name']}');
+
+        // Try 'latitude' first (new format from /patrol/start), then 'location_lat' (old format)
+        final latField = block['latitude'] ?? block['location_lat'];
+        final lngField = block['longitude'] ?? block['location_lng'];
+        final radiusField = block['radius'] ?? block['checkpoint_radius'];
+
+        print('[Patrol] Raw data: lat=$latField, lng=$lngField');
+
+        if (latField is String) {
+          lat = double.parse(latField);
+        } else {
+          lat = (latField as num?)?.toDouble() ?? 0.0;
+        }
+
+        if (lngField is String) {
+          lng = double.parse(lngField);
+        } else {
+          lng = (lngField as num?)?.toDouble() ?? 0.0;
+        }
+
+        if (radiusField != null) {
+          if (radiusField is String) {
+            radius = double.parse(radiusField);
+          } else {
+            radius = (radiusField as num).toDouble();
+          }
+        }
+
+        print('[Patrol] ✅ Parsed: lat=$lat, lng=$lng, radius=$radius');
+      } catch (e) {
+        print('[Patrol] ⚠️ Error parsing block coordinates: $e');
+        print('[Patrol] Block data: $block');
+      }
+
       return GeofenceZone(
         id: block['id'],
         name: block['name'] ?? 'Block ${block['id']}',
-        latitude: block['location_lat']?.toDouble() ?? 0.0,
-        longitude: block['location_lng']?.toDouble() ?? 0.0,
-        radiusMeters: (block['checkpoint_radius'] ?? 50).toDouble(),
+        latitude: lat,
+        longitude: lng,
+        radiusMeters: radius,
         metadata: block,
       );
     }).toList();
@@ -205,6 +249,10 @@ class PatrolService {
     });
 
     print('[Patrol] Setup ${zones.length} geofence zones');
+    zones.forEach((zone) {
+      print(
+          '[Patrol]   - ${zone.name}: ${zone.latitude}, ${zone.longitude} (${zone.radiusMeters}m)');
+    });
   }
 
   /// Handle geofence events
@@ -404,9 +452,11 @@ class PatrolService {
           'Authorization': 'Bearer $token',
         },
         body: jsonEncode({
+          'user_id': _currentSession
+              ?.userId, // Add user_id for pos_token authentication
           'patrol_session_id': _currentSession?.id,
-          'end_location_lat': endLat,
-          'end_location_lng': endLng,
+          'end_lat': endLat,
+          'end_lng': endLng,
           'notes': notes,
         }),
       );
@@ -467,6 +517,18 @@ class PatrolService {
       _currentSession = PatrolSession.fromJson(jsonDecode(sessionJson));
       print('[Patrol] Loaded existing patrol session');
 
+      // Restore geofence zones from saved blocks
+      final blocksJson = prefs.getString('current_patrol_blocks');
+      if (blocksJson != null) {
+        final blocks = jsonDecode(blocksJson) as List;
+        _setupGeofences(blocks);
+        print('[Patrol] Restored ${blocks.length} geofence zones');
+      } else {
+        // Fallback: fetch blocks from API if not in storage
+        print('[Patrol] No blocks in storage, fetching from API...');
+        await _fetchAndSetupBlocks();
+      }
+
       // Resume tracking if session is active
       if (_currentSession!.isActive) {
         print('[Patrol] Resuming patrol tracking');
@@ -476,11 +538,61 @@ class PatrolService {
     }
   }
 
+  /// Fetch blocks from API and setup geofences
+  Future<void> _fetchAndSetupBlocks() async {
+    try {
+      final token = await _getToken();
+      if (token == null) {
+        print('[Patrol] No token, cannot fetch blocks');
+        return;
+      }
+
+      print('[Patrol] Fetching blocks from API...');
+      final url = Uri.parse('${ApiConfig.serverUrl}/api/blocks');
+      final response = await http.get(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      ).timeout(const Duration(seconds: 10));
+
+      print('[Patrol] Blocks API response status: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        print('[Patrol] Blocks data type: ${data.runtimeType}');
+        print('[Patrol] Blocks data: $data');
+
+        // API /api/blocks returns array directly
+        if (data is List) {
+          print('[Patrol] Processing ${data.length} blocks...');
+          _setupGeofences(data);
+          await _saveBlocksData(data);
+          print('[Patrol] ✅ Fetched and setup ${data.length} blocks from API');
+        } else {
+          print('[Patrol] ❌ Unexpected data format: ${data.runtimeType}');
+        }
+      } else {
+        print('[Patrol] ❌ Failed to fetch blocks: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('[Patrol] ❌ Error fetching blocks: $e');
+    }
+  }
+
+  /// Save blocks data for resume
+  Future<void> _saveBlocksData(List<dynamic> blocks) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('current_patrol_blocks', jsonEncode(blocks));
+  }
+
   /// Clear current session
   Future<void> _clearCurrentSession() async {
     _currentSession = null;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('current_patrol_session');
+    await prefs.remove('current_patrol_blocks');
   }
 
   /// Cleanup
