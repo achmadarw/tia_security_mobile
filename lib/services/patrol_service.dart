@@ -23,6 +23,10 @@ class PatrolService {
   final List<PatrolCheckpoint> _offlineCheckpoints = [];
   Timer? _syncTimer;
 
+  // Token cache to avoid repeated SharedPreferences access
+  String? _cachedToken;
+  int? _cachedUserId;
+
   /// Get current patrol session
   PatrolSession? get currentSession => _currentSession;
 
@@ -31,32 +35,38 @@ class PatrolService {
 
   /// Get access token (try security_access_token first, fallback to pos_token)
   Future<String?> _getToken() async {
-    final prefs = await SharedPreferences.getInstance();
+    // Return cached token if available
+    if (_cachedToken != null) {
+      return _cachedToken;
+    }
 
-    // Debug: Print all available keys
-    final allKeys = prefs.getKeys();
-    print('[Patrol] SharedPreferences keys: $allKeys');
+    final prefs = await SharedPreferences.getInstance();
 
     // Try security_access_token first (from select security)
     String? token = prefs.getString('security_access_token');
     if (token != null) {
-      print('[Patrol] Using security_access_token');
+      _cachedToken = token;
       return token;
     }
 
     // Fallback to pos_token (from pos login)
     token = prefs.getString('security_pos_token');
     if (token != null) {
-      print('[Patrol] Using security_pos_token (fallback)');
+      _cachedToken = token;
       return token;
     }
 
-    print('[Patrol] ERROR: No authentication token found!');
+    print('[Patrol] ❌ No authentication token found!');
     return null;
   }
 
   /// Get user_id from stored session data
   Future<int?> _getUserId() async {
+    // Return cached user ID if available
+    if (_cachedUserId != null) {
+      return _cachedUserId;
+    }
+
     final prefs = await SharedPreferences.getInstance();
 
     // Try security_user_data first (from select security flow)
@@ -64,11 +74,13 @@ class PatrolService {
     if (securityUserData != null) {
       try {
         final userData = jsonDecode(securityUserData);
-        final userId = userData['id'];
-        print('[Patrol] User ID from security_user_data: $userId');
-        return userId;
+        final userId = userData['id'] as int?;
+        if (userId != null) {
+          _cachedUserId = userId;
+          return userId;
+        }
       } catch (e) {
-        print('[Patrol] Error parsing security_user_data: $e');
+        print('[Patrol] ⚠️ Error parsing security_user_data: $e');
       }
     }
 
@@ -77,15 +89,17 @@ class PatrolService {
     if (userData != null) {
       try {
         final data = jsonDecode(userData);
-        final userId = data['id'];
-        print('[Patrol] User ID from user_data: $userId');
-        return userId;
+        final userId = data['id'] as int?;
+        if (userId != null) {
+          _cachedUserId = userId;
+          return userId;
+        }
       } catch (e) {
-        print('[Patrol] Error parsing user_data: $e');
+        print('[Patrol] ⚠️ Error parsing user_data: $e');
       }
     }
 
-    print('[Patrol] ERROR: No user_id found in session data!');
+    print('[Patrol] ❌ No user_id found in session data!');
     return null;
   }
 
@@ -192,7 +206,7 @@ class PatrolService {
       // Parse coordinates safely (could be String or num from API)
       double lat = 0.0;
       double lng = 0.0;
-      double radius = 50.0;
+      double radius = 5.0;
 
       try {
         print('[Patrol] 🔍 Parsing block: ${block['name']}');
@@ -510,31 +524,42 @@ class PatrolService {
 
   /// Load current session from local storage
   Future<void> loadCurrentSession() async {
+    print('[Patrol] 📂 Loading session from storage...');
+    final startTime = DateTime.now();
+
     final prefs = await SharedPreferences.getInstance();
     final sessionJson = prefs.getString('current_patrol_session');
 
     if (sessionJson != null) {
       _currentSession = PatrolSession.fromJson(jsonDecode(sessionJson));
-      print('[Patrol] Loaded existing patrol session');
+      print(
+          '[Patrol] ✅ Session loaded in ${DateTime.now().difference(startTime).inMilliseconds}ms');
 
       // Restore geofence zones from saved blocks
+      final blocksStartTime = DateTime.now();
       final blocksJson = prefs.getString('current_patrol_blocks');
       if (blocksJson != null) {
         final blocks = jsonDecode(blocksJson) as List;
         _setupGeofences(blocks);
-        print('[Patrol] Restored ${blocks.length} geofence zones');
+        print(
+            '[Patrol] ✅ Restored ${blocks.length} zones in ${DateTime.now().difference(blocksStartTime).inMilliseconds}ms');
       } else {
         // Fallback: fetch blocks from API if not in storage
-        print('[Patrol] No blocks in storage, fetching from API...');
+        print('[Patrol] ⚠️ No blocks in storage, fetching from API...');
         await _fetchAndSetupBlocks();
       }
 
       // Resume tracking if session is active
       if (_currentSession!.isActive) {
-        print('[Patrol] Resuming patrol tracking');
+        print('[Patrol] 🔄 Resuming patrol tracking');
         await _gpsService.startTracking(intervalSeconds: 1);
         _startBackgroundTracking();
       }
+
+      print(
+          '[Patrol] 🎉 Total load time: ${DateTime.now().difference(startTime).inMilliseconds}ms');
+    } else {
+      print('[Patrol] ❌ No session found in storage');
     }
   }
 
@@ -555,7 +580,13 @@ class PatrolService {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
         },
-      ).timeout(const Duration(seconds: 10));
+      ).timeout(
+        const Duration(seconds: 5),
+        onTimeout: () {
+          print('[Patrol] ⚠️ Blocks API timeout after 5 seconds');
+          throw TimeoutException('Blocks API timeout');
+        },
+      );
 
       print('[Patrol] Blocks API response status: ${response.statusCode}');
 

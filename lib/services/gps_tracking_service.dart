@@ -12,7 +12,13 @@ class GPSTrackingService {
   StreamController<Position>? _positionController;
   StreamSubscription<Position>? _positionSubscription;
   Position? _lastPosition;
+  Position? _lastValidPosition; // For filtering
   bool _isTracking = false;
+  
+  // GPS filtering thresholds
+  static const double _maxAccuracyMeters = 20.0; // Reject accuracy > 20m
+  static const double _maxSpeedKmh = 30.0; // Reject speed > 30 km/h (sprint speed)
+  static const double _maxJumpMeters = 100.0; // Reject jumps > 100m in 1 second
 
   /// Get stream of position updates
   Stream<Position>? get positionStream => _positionController?.stream;
@@ -89,10 +95,17 @@ class GPSTrackingService {
         locationSettings: locationSettings,
       ).listen(
         (Position position) {
-          _lastPosition = position;
-          _positionController?.add(position);
-          print(
-              '[GPS] Position updated: ${position.latitude}, ${position.longitude} (accuracy: ${position.accuracy}m)');
+          // Apply GPS filtering
+          if (_isValidPosition(position)) {
+            _lastPosition = position;
+            _lastValidPosition = position;
+            _positionController?.add(position);
+            print(
+                '[GPS] ✅ Valid position: ${position.latitude}, ${position.longitude} (accuracy: ${position.accuracy}m)');
+          } else {
+            print(
+                '[GPS] ❌ Filtered out: ${position.latitude}, ${position.longitude} (accuracy: ${position.accuracy}m)');
+          }
         },
         onError: (error) {
           print('[GPS] Error: $error');
@@ -182,6 +195,60 @@ class GPSTrackingService {
       targetLon,
     );
     return distance <= radiusMeters;
+  }
+
+  /// Validate GPS position to filter out erratic readings
+  bool _isValidPosition(Position position) {
+    // 1. Check accuracy - reject if > 20 meters
+    if (position.accuracy > _maxAccuracyMeters) {
+      print('[GPS Filter] Rejected: Poor accuracy ${position.accuracy}m (max ${_maxAccuracyMeters}m)');
+      return false;
+    }
+
+    // 2. If no previous valid position, accept this one
+    if (_lastValidPosition == null) {
+      print('[GPS Filter] Accepted: First valid position');
+      return true;
+    }
+
+    // 3. Calculate distance from last valid position
+    double distance = Geolocator.distanceBetween(
+      _lastValidPosition!.latitude,
+      _lastValidPosition!.longitude,
+      position.latitude,
+      position.longitude,
+    );
+
+    // 4. Calculate time difference in seconds
+    double timeDiff = position.timestamp
+        .difference(_lastValidPosition!.timestamp)
+        .inMilliseconds / 1000.0;
+
+    // Avoid division by zero
+    if (timeDiff < 0.1) {
+      print('[GPS Filter] Rejected: Too soon (${timeDiff}s)');
+      return false;
+    }
+
+    // 5. Calculate speed in km/h
+    double speedKmh = (distance / timeDiff) * 3.6;
+
+    // 6. Check for unrealistic speed (> 30 km/h = sprint speed)
+    if (speedKmh > _maxSpeedKmh) {
+      print('[GPS Filter] Rejected: Speed too high ${speedKmh.toStringAsFixed(1)} km/h (max ${_maxSpeedKmh} km/h)');
+      return false;
+    }
+
+    // 7. Check for sudden jumps (> 100m in 1 second)
+    double maxDistance = _maxJumpMeters * timeDiff;
+    if (distance > maxDistance) {
+      print('[GPS Filter] Rejected: Jump too large ${distance.toStringAsFixed(1)}m in ${timeDiff.toStringAsFixed(1)}s');
+      return false;
+    }
+
+    // Position passed all filters
+    print('[GPS Filter] Accepted: ${distance.toStringAsFixed(1)}m in ${timeDiff.toStringAsFixed(1)}s (${speedKmh.toStringAsFixed(1)} km/h)');
+    return true;
   }
 
   /// Cleanup resources

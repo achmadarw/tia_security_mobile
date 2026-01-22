@@ -39,7 +39,6 @@ class _ActivePatrolScreenState extends State<ActivePatrolScreen> {
   final Set<String> _visitedBlockNames = {}; // Track which blocks visited
   Duration _patrolDuration = Duration.zero;
   Timer? _durationTimer;
-  Timer? _zonesCheckTimer;
 
   bool _isLoading = true;
   String? _errorMessage;
@@ -54,6 +53,9 @@ class _ActivePatrolScreenState extends State<ActivePatrolScreen> {
     setState(() => _isLoading = true);
 
     try {
+      print('[ActivePatrol] 🚀 Starting initialization...');
+      final startTime = DateTime.now();
+
       // Load current patrol session (this will also fetch and setup blocks if needed)
       await _patrolService.loadCurrentSession();
       _currentSession = _patrolService.currentSession;
@@ -62,14 +64,15 @@ class _ActivePatrolScreenState extends State<ActivePatrolScreen> {
         throw Exception('Tidak ada sesi patroli aktif');
       }
 
-      // Wait a bit for zones to be setup
-      await Future.delayed(const Duration(milliseconds: 500));
-
+      print(
+          '[ActivePatrol] Session loaded in ${DateTime.now().difference(startTime).inMilliseconds}ms');
       print(
           '[ActivePatrol] Geofence zones available: ${_geofencingService.zones.length}');
 
-      // Start GPS tracking
-      await _gpsService.startTracking();
+      // Start GPS tracking (non-blocking)
+      _gpsService.startTracking().then((_) {
+        print('[ActivePatrol] GPS tracking started');
+      });
 
       // Subscribe to position updates (1 second interval)
       _positionSubscription = _gpsService.positionStream?.listen((position) {
@@ -91,13 +94,17 @@ class _ActivePatrolScreenState extends State<ActivePatrolScreen> {
         }
       });
 
-      // Check for geofence zones periodically (zones loaded asynchronously from API)
-      _zonesCheckTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
-        if (_geofencingService.zones.isNotEmpty) {
-          setState(() {}); // Rebuild UI when zones available
+      // Check for geofence zones only once after 1 second (instead of every 500ms)
+      Future.delayed(const Duration(seconds: 1), () {
+        if (mounted && _geofencingService.zones.isNotEmpty) {
+          print(
+              '[ActivePatrol] Zones ready: ${_geofencingService.zones.length}');
+          setState(() {}); // Single rebuild when zones available
         }
       });
 
+      print(
+          '[ActivePatrol] ✅ Initialization complete in ${DateTime.now().difference(startTime).inMilliseconds}ms');
       setState(() => _isLoading = false);
     } catch (e) {
       print('[ActivePatrol] Error initializing: $e');
@@ -237,7 +244,6 @@ class _ActivePatrolScreenState extends State<ActivePatrolScreen> {
         // Stop tracking
         await _gpsService.stopTracking();
         _durationTimer?.cancel();
-        _zonesCheckTimer?.cancel();
 
         // Show success dialog and return to home
         if (mounted) {
@@ -320,7 +326,6 @@ class _ActivePatrolScreenState extends State<ActivePatrolScreen> {
     _positionSubscription?.cancel();
     _geofenceSubscription?.cancel();
     _durationTimer?.cancel();
-    _zonesCheckTimer?.cancel();
     _mapController?.dispose();
     super.dispose();
   }
