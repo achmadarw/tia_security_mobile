@@ -11,6 +11,7 @@ import 'quick_attendance_screen.dart';
 import 'profile_screen.dart';
 import 'admin/shift_management_screen.dart';
 import 'admin/roster_management_screen.dart';
+import 'admin/block_management_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final AuthService authService;
@@ -2059,8 +2060,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           borderRadius: BorderRadius.circular(16)),
                       title: const Row(
                         children: [
-                          Icon(Icons.schedule,
-                              color: Colors.orange, size: 32),
+                          Icon(Icons.schedule, color: Colors.orange, size: 32),
                           SizedBox(width: 12),
                           Expanded(
                             child: Text(
@@ -2157,6 +2157,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             context,
             MaterialPageRoute(
               builder: (context) => RosterManagementScreen(
+                authService: widget.authService,
+              ),
+            ),
+          );
+        }),
+      if (isAdmin)
+        _ActionData('Blok', Icons.location_city, Colors.blue, () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => BlockManagementScreen(
                 authService: widget.authService,
               ),
             ),
@@ -2521,8 +2532,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       borderRadius: BorderRadius.circular(16)),
                   title: const Row(
                     children: [
-                      Icon(Icons.schedule,
-                          color: Colors.orange, size: 32),
+                      Icon(Icons.schedule, color: Colors.orange, size: 32),
                       SizedBox(width: 12),
                       Expanded(
                         child: Text(
