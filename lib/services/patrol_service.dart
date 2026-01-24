@@ -202,11 +202,14 @@ class PatrolService {
   void _setupGeofences(List<dynamic> blocks) {
     _geofenceService.clearZones();
 
+    print('[Patrol] 🔧 Setting up ${blocks.length} geofence zones...');
+    print('[Patrol] 📦 Blocks data: ${jsonEncode(blocks)}');
+
     List<GeofenceZone> zones = blocks.map((block) {
       // Parse coordinates safely (could be String or num from API)
       double lat = 0.0;
       double lng = 0.0;
-      double radius = 5.0;
+      double radius = 5.0; // Default 5 meter
 
       try {
         print('[Patrol] 🔍 Parsing block: ${block['name']}');
@@ -216,7 +219,8 @@ class PatrolService {
         final lngField = block['longitude'] ?? block['location_lng'];
         final radiusField = block['radius'] ?? block['checkpoint_radius'];
 
-        print('[Patrol] Raw data: lat=$latField, lng=$lngField');
+        print(
+            '[Patrol] 📍 Raw data: lat=$latField, lng=$lngField, radius=$radiusField');
 
         if (latField is String) {
           lat = double.parse(latField);
@@ -238,13 +242,21 @@ class PatrolService {
           }
         }
 
+        // 🔧 FORCE OVERRIDE: Gunakan radius maksimal 5 meter untuk backward compatibility
+        // dengan cache lama yang masih punya radius 50
+        if (radius > 5.0) {
+          print(
+              '[Patrol] ⚠️ Radius $radius meter too large, forcing to 5.0 meter');
+          radius = 5.0;
+        }
+
         print('[Patrol] ✅ Parsed: lat=$lat, lng=$lng, radius=$radius');
       } catch (e) {
         print('[Patrol] ⚠️ Error parsing block coordinates: $e');
         print('[Patrol] Block data: $block');
       }
 
-      return GeofenceZone(
+      final zone = GeofenceZone(
         id: block['id'],
         name: block['name'] ?? 'Block ${block['id']}',
         latitude: lat,
@@ -252,6 +264,10 @@ class PatrolService {
         radiusMeters: radius,
         metadata: block,
       );
+
+      print(
+          '[Patrol] 🎯 Created zone: ${zone.name} with radius ${zone.radiusMeters}m');
+      return zone;
     }).toList();
 
     _geofenceService.addZones(zones);

@@ -157,6 +157,18 @@ class _ActivePatrolScreenState extends State<ActivePatrolScreen> {
 
     // Update geofencing with current position
     _geofencingService.updatePosition(position);
+
+    // Log distance to all blocks for verification
+    for (var zone in _geofencingService.zones) {
+      final dist = Geolocator.distanceBetween(
+        position.latitude,
+        position.longitude,
+        zone.latitude,
+        zone.longitude,
+      );
+      print(
+          '[ActivePatrol] 📍 Distance to ${zone.name}: ${dist.toStringAsFixed(1)}m (threshold: ${zone.radiusMeters}m)');
+    }
   }
 
   void _handleGeofenceEvent(GeofenceEvent event) {
@@ -372,6 +384,45 @@ class _ActivePatrolScreenState extends State<ActivePatrolScreen> {
       body: SafeArea(
         child: Column(
           children: [
+            // GPS Status Banner (jika belum ready)
+            if (_currentPosition == null)
+              Container(
+                width: double.infinity,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  border: Border(
+                    bottom: BorderSide(color: Colors.blue.shade200, width: 1),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor:
+                            AlwaysStoppedAnimation<Color>(Colors.blue.shade600),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Mencari sinyal GPS... Pastikan Anda berada di area terbuka',
+                        style: TextStyle(
+                          color: Colors.blue.shade900,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                    Icon(Icons.gps_not_fixed,
+                        color: Colors.blue.shade600, size: 20),
+                  ],
+                ),
+              ),
+
             // Top panel (stats header)
             _buildTopPanel(),
 
@@ -489,16 +540,8 @@ class _ActivePatrolScreenState extends State<ActivePatrolScreen> {
   }
 
   Widget _buildMap() {
-    if (_currentPosition == null) {
-      return Container(
-        color: Colors.grey.shade300,
-        child: const Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
-    }
-
-    // Visual rute blok user-friendly tanpa Google Maps
+    // Selalu tampilkan blocks list, tidak perlu tunggu GPS
+    // Distance akan update real-time saat GPS ready
     return _buildBlockRouteVisual();
   }
 
@@ -749,18 +792,39 @@ class _ActivePatrolScreenState extends State<ActivePatrolScreen> {
                             : AppColors.textSecondary,
                       ),
                       const SizedBox(width: 4),
-                      Text(
-                        distance != null
-                            ? distance < 1000
-                                ? '${distance.toStringAsFixed(0)} m'
-                                : '${(distance / 1000).toStringAsFixed(2)} km'
-                            : 'Menghitung...',
-                        style: TextStyle(
-                          color: isDark
-                              ? AppColors.darkTextSecondary
-                              : AppColors.textSecondary,
-                          fontSize: 12,
-                        ),
+                      Row(
+                        children: [
+                          if (distance == null) ...[
+                            // GPS belum ready - show loading indicator
+                            SizedBox(
+                              width: 12,
+                              height: 12,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  isDark ? Colors.blue.shade300 : Colors.blue,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                          ],
+                          Text(
+                            distance != null
+                                ? distance < 1000
+                                    ? '${distance.toStringAsFixed(0)} m'
+                                    : '${(distance / 1000).toStringAsFixed(2)} km'
+                                : 'Mencari GPS...',
+                            style: TextStyle(
+                              color: isDark
+                                  ? AppColors.darkTextSecondary
+                                  : AppColors.textSecondary,
+                              fontSize: 12,
+                              fontStyle: distance == null
+                                  ? FontStyle.italic
+                                  : FontStyle.normal,
+                            ),
+                          ),
+                        ],
                       ),
                       if (isVisited) ...[
                         const SizedBox(width: 12),

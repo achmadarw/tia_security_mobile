@@ -14,10 +14,11 @@ class GPSTrackingService {
   Position? _lastPosition;
   Position? _lastValidPosition; // For filtering
   bool _isTracking = false;
-  
+
   // GPS filtering thresholds
   static const double _maxAccuracyMeters = 20.0; // Reject accuracy > 20m
-  static const double _maxSpeedKmh = 30.0; // Reject speed > 30 km/h (sprint speed)
+  static const double _maxSpeedKmh =
+      30.0; // Reject speed > 30 km/h (sprint speed)
   static const double _maxJumpMeters = 100.0; // Reject jumps > 100m in 1 second
 
   /// Get stream of position updates
@@ -112,16 +113,25 @@ class GPSTrackingService {
         },
       );
 
-      // Get initial position
+      // Get initial position with best effort (may be lower accuracy)
       try {
         Position initialPosition = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.high,
-        );
-        _lastPosition = initialPosition;
-        _positionController?.add(initialPosition);
-        print('[GPS] Initial position obtained');
+          desiredAccuracy: LocationAccuracy.best,
+        ).timeout(const Duration(seconds: 10));
+
+        // Apply filter to initial position
+        if (_isValidPosition(initialPosition)) {
+          _lastPosition = initialPosition;
+          _lastValidPosition = initialPosition;
+          _positionController?.add(initialPosition);
+          print('[GPS] ⚡ Initial position obtained and validated');
+        } else {
+          print(
+              '[GPS] ⚠️ Initial position rejected by filter, waiting for stream...');
+        }
       } catch (e) {
-        print('[GPS] Error getting initial position: $e');
+        print(
+            '[GPS] ⏱️ Initial position timeout or error: $e (will use stream)');
       }
 
       return true;
@@ -199,16 +209,23 @@ class GPSTrackingService {
 
   /// Validate GPS position to filter out erratic readings
   bool _isValidPosition(Position position) {
-    // 1. Check accuracy - reject if > 20 meters
-    if (position.accuracy > _maxAccuracyMeters) {
-      print('[GPS Filter] Rejected: Poor accuracy ${position.accuracy}m (max ${_maxAccuracyMeters}m)');
-      return false;
+    // 1. If no previous valid position, use relaxed accuracy (50m for cold start)
+    if (_lastValidPosition == null) {
+      if (position.accuracy > 50.0) {
+        print(
+            '[GPS Filter] Rejected: Cold start accuracy too poor ${position.accuracy}m (max 50m)');
+        return false;
+      }
+      print(
+          '[GPS Filter] ✅ Accepted: First valid position (accuracy: ${position.accuracy}m)');
+      return true;
     }
 
-    // 2. If no previous valid position, accept this one
-    if (_lastValidPosition == null) {
-      print('[GPS Filter] Accepted: First valid position');
-      return true;
+    // 2. For subsequent positions, use stricter accuracy (20m)
+    if (position.accuracy > _maxAccuracyMeters) {
+      print(
+          '[GPS Filter] Rejected: Poor accuracy ${position.accuracy}m (max ${_maxAccuracyMeters}m)');
+      return false;
     }
 
     // 3. Calculate distance from last valid position
@@ -221,8 +238,9 @@ class GPSTrackingService {
 
     // 4. Calculate time difference in seconds
     double timeDiff = position.timestamp
-        .difference(_lastValidPosition!.timestamp)
-        .inMilliseconds / 1000.0;
+            .difference(_lastValidPosition!.timestamp)
+            .inMilliseconds /
+        1000.0;
 
     // Avoid division by zero
     if (timeDiff < 0.1) {
@@ -235,19 +253,22 @@ class GPSTrackingService {
 
     // 6. Check for unrealistic speed (> 30 km/h = sprint speed)
     if (speedKmh > _maxSpeedKmh) {
-      print('[GPS Filter] Rejected: Speed too high ${speedKmh.toStringAsFixed(1)} km/h (max ${_maxSpeedKmh} km/h)');
+      print(
+          '[GPS Filter] Rejected: Speed too high ${speedKmh.toStringAsFixed(1)} km/h (max ${_maxSpeedKmh} km/h)');
       return false;
     }
 
     // 7. Check for sudden jumps (> 100m in 1 second)
     double maxDistance = _maxJumpMeters * timeDiff;
     if (distance > maxDistance) {
-      print('[GPS Filter] Rejected: Jump too large ${distance.toStringAsFixed(1)}m in ${timeDiff.toStringAsFixed(1)}s');
+      print(
+          '[GPS Filter] Rejected: Jump too large ${distance.toStringAsFixed(1)}m in ${timeDiff.toStringAsFixed(1)}s');
       return false;
     }
 
     // Position passed all filters
-    print('[GPS Filter] Accepted: ${distance.toStringAsFixed(1)}m in ${timeDiff.toStringAsFixed(1)}s (${speedKmh.toStringAsFixed(1)} km/h)');
+    print(
+        '[GPS Filter] Accepted: ${distance.toStringAsFixed(1)}m in ${timeDiff.toStringAsFixed(1)}s (${speedKmh.toStringAsFixed(1)} km/h)');
     return true;
   }
 
