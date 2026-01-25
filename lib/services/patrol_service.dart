@@ -539,8 +539,10 @@ class PatrolService {
   }
 
   /// Load current session from local storage
-  Future<void> loadCurrentSession() async {
+  /// [forceFreshBlocks] - If true, always fetch fresh blocks from API (used when starting new patrol)
+  Future<void> loadCurrentSession({bool forceFreshBlocks = false}) async {
     print('[Patrol] 📂 Loading session from storage...');
+    print('[Patrol] 🔄 Force fresh blocks: $forceFreshBlocks');
     final startTime = DateTime.now();
 
     final prefs = await SharedPreferences.getInstance();
@@ -551,18 +553,28 @@ class PatrolService {
       print(
           '[Patrol] ✅ Session loaded in ${DateTime.now().difference(startTime).inMilliseconds}ms');
 
-      // Restore geofence zones from saved blocks
+      // Strategy: Fetch fresh blocks from API when starting patrol (in pos = has internet)
+      // Use cached blocks only when resuming (app killed/notification = offline support)
       final blocksStartTime = DateTime.now();
-      final blocksJson = prefs.getString('current_patrol_blocks');
-      if (blocksJson != null) {
-        final blocks = jsonDecode(blocksJson) as List;
-        _setupGeofences(blocks);
+
+      if (forceFreshBlocks) {
+        // CASE 1: Starting patrol - ALWAYS fetch fresh (ensures latest block coordinates)
         print(
-            '[Patrol] ✅ Restored ${blocks.length} zones in ${DateTime.now().difference(blocksStartTime).inMilliseconds}ms');
-      } else {
-        // Fallback: fetch blocks from API if not in storage
-        print('[Patrol] ⚠️ No blocks in storage, fetching from API...');
+            '[Patrol] 🌐 Fetching FRESH blocks from API (start patrol in pos area)...');
         await _fetchAndSetupBlocks();
+      } else {
+        // CASE 2: Resuming patrol - Try cache first (offline support during patrol)
+        final blocksJson = prefs.getString('current_patrol_blocks');
+        if (blocksJson != null) {
+          final blocks = jsonDecode(blocksJson) as List;
+          _setupGeofences(blocks);
+          print(
+              '[Patrol] 💾 Restored ${blocks.length} zones from cache in ${DateTime.now().difference(blocksStartTime).inMilliseconds}ms');
+        } else {
+          // Fallback: fetch blocks from API if not in storage
+          print('[Patrol] ⚠️ No blocks in cache, fetching from API...');
+          await _fetchAndSetupBlocks();
+        }
       }
 
       // Resume tracking if session is active

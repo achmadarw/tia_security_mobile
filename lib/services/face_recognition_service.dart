@@ -43,6 +43,7 @@ class FaceRecognitionService {
   ));
 
   /// Initialize TFLite model dengan retry mechanism
+  /// Optimized for Snapdragon 7s Gen 2 with Hexagon NPU
   Future<void> initialize() async {
     // Prevent concurrent initialization
     if (_isInitializing) {
@@ -64,11 +65,38 @@ class FaceRecognitionService {
     _isInitializing = true;
 
     try {
-      print('[FaceRecognition] Starting model initialization...');
+      print(
+          '[FaceRecognition] Starting model initialization with hardware acceleration...');
 
-      // Load model from assets
-      _interpreter =
-          await Interpreter.fromAsset('assets/models/mobilefacenet.tflite');
+      // Configure interpreter options for Snapdragon optimization
+      final interpreterOptions = InterpreterOptions();
+
+      // Enable GPU delegate for hardware acceleration (Adreno GPU)
+      // Simple configuration compatible with tflite_flutter 0.10.4
+      if (Platform.isAndroid) {
+        try {
+          final gpuDelegate = GpuDelegateV2(
+            options: GpuDelegateOptionsV2(
+              isPrecisionLossAllowed: false, // Maintain accuracy
+            ),
+          );
+          interpreterOptions.addDelegate(gpuDelegate);
+          print(
+              '[FaceRecognition] 🎮 GPU delegate enabled (Adreno acceleration)');
+        } catch (e) {
+          print('[FaceRecognition] ⚠️ GPU delegate failed: $e');
+          print('[FaceRecognition] 💻 Using CPU with XNNPACK optimization');
+        }
+      }
+
+      // Optimize thread count for Snapdragon (4+4 cores)
+      interpreterOptions.threads = 4; // Use performance cores
+
+      // Load model from assets with optimization
+      _interpreter = await Interpreter.fromAsset(
+        'assets/models/mobilefacenet.tflite',
+        options: interpreterOptions,
+      );
 
       print('[FaceRecognition] Model loaded, allocating tensors...');
 

@@ -121,7 +121,10 @@ class BlockService {
 
       if (response.statusCode == 200) {
         final jsonData = json.decode(response.body);
-        final block = Block.fromJson(jsonData['block']);
+        print('[BlockService] Parsed JSON type: ${jsonData.runtimeType}');
+
+        // Backend returns block object directly, not wrapped in {block: ...}
+        final block = Block.fromJson(jsonData);
         print('[BlockService] Fetched block: ${block.name}');
 
         return block;
@@ -160,7 +163,10 @@ class BlockService {
 
       if (response.statusCode == 201 || response.statusCode == 200) {
         final jsonData = json.decode(response.body);
-        final createdBlock = Block.fromJson(jsonData['block']);
+        print('[BlockService] Parsed JSON type: ${jsonData.runtimeType}');
+
+        // Backend returns block object directly, not wrapped in {block: ...}
+        final createdBlock = Block.fromJson(jsonData);
         print('[BlockService] Block created successfully: ${createdBlock.id}');
 
         return createdBlock;
@@ -197,10 +203,14 @@ class BlockService {
       );
 
       print('[BlockService] Update response status: ${response.statusCode}');
+      print('[BlockService] Update response body: ${response.body}');
 
       if (response.statusCode == 200) {
         final jsonData = json.decode(response.body);
-        final updatedBlock = Block.fromJson(jsonData['block']);
+        print('[BlockService] Parsed JSON type: ${jsonData.runtimeType}');
+
+        // Backend returns block object directly, not wrapped in {block: ...}
+        final updatedBlock = Block.fromJson(jsonData);
         print('[BlockService] Block updated successfully');
 
         return updatedBlock;

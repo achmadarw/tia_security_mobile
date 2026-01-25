@@ -33,6 +33,14 @@ class _BlockFormScreenState extends State<BlockFormScreen> {
   bool _isLoading = false;
   bool _isGettingGPS = false;
   Position? _currentPosition;
+  
+  // GPS Warm-up tracking
+  bool _isWarmingUp = false;
+  int _warmupSeconds = 0;
+  double _bestAccuracy = double.infinity;
+  Position? _bestPosition;
+  int _gpsReadCount = 0;
+  final List<double> _accuracyHistory = [];
 
   @override
   void initState() {
@@ -66,6 +74,12 @@ class _BlockFormScreenState extends State<BlockFormScreen> {
   Future<void> _getCurrentLocation() async {
     setState(() {
       _isGettingGPS = true;
+      _isWarmingUp = true;
+      _warmupSeconds = 0;
+      _bestAccuracy = double.infinity;
+      _bestPosition = null;
+      _gpsReadCount = 0;
+      _accuracyHistory.clear();
     });
 
     try {
@@ -83,74 +97,159 @@ class _BlockFormScreenState extends State<BlockFormScreen> {
             'Izin lokasi ditolak permanen. Buka pengaturan untuk mengaktifkan.');
       }
 
-      // Get current position with high accuracy
-      print('[BlockForm] Getting current GPS location...');
-      final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.best,
-        timeLimit: const Duration(seconds: 15),
-      );
-
-      print(
-          '[BlockForm] GPS acquired: ${position.latitude}, ${position.longitude}');
-      print('[BlockForm] Accuracy: ${position.accuracy}m');
-
-      setState(() {
-        _currentPosition = position;
-        _latController.text = position.latitude.toStringAsFixed(8);
-        _lngController.text = position.longitude.toStringAsFixed(8);
-        _isGettingGPS = false;
-      });
-
-      // Show warning if accuracy is poor
-      if (position.accuracy > 20) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              '⚠️ Akurasi GPS rendah: ${position.accuracy.toStringAsFixed(1)}m\n\n'
-              'Untuk hasil terbaik:\n'
-              '• Pindah ke area terbuka (jauh dari gedung tinggi)\n'
-              '• Pastikan langit terlihat jelas\n'
-              '• Tunggu beberapa menit agar GPS stabil\n'
-              '• Coba ambil GPS lagi\n\n'
-              'Akurasi rendah dapat menyebabkan patrol check-in tidak akurat!',
-            ),
-            backgroundColor: AppColors.warning,
-            duration: const Duration(seconds: 8),
-            action: SnackBarAction(
-              label: 'COBA LAGI',
-              textColor: Colors.white,
-              onPressed: _getCurrentLocation,
-            ),
-          ),
-        );
-      } else if (position.accuracy > 10) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Koordinat GPS berhasil diambil\n'
-              'Akurasi: ${position.accuracy.toStringAsFixed(1)}m (Cukup)\n\n'
-              'Tip: Untuk akurasi lebih baik, pindah ke area lebih terbuka',
-            ),
-            backgroundColor: AppColors.info,
-            duration: const Duration(seconds: 4),
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              '✅ Koordinat GPS berhasil diambil\n'
-              'Akurasi: ${position.accuracy.toStringAsFixed(1)}m (${position.accuracy <= 5 ? 'Sangat Baik' : 'Baik'})',
-            ),
-            backgroundColor: AppColors.success,
-            duration: const Duration(seconds: 3),
-          ),
-        );
+      print('[BlockForm] 🛰️ Starting GPS warm-up sequence...');
+      
+      // GPS Warm-up: Poll multiple times for best accuracy
+      const maxDuration = 90; // seconds (extended for optimal satellite + fused location lock)
+      const pollInterval = 3; // seconds (optimal GPS update interval)
+      const targetAccuracy = 8.0; // meters (excellent target with Fused Location)
+      
+      for (int i = 0; i < (maxDuration / pollInterval); i++) {
+        if (!mounted || !_isWarmingUp) break;
+        
+        try {
+          _warmupSeconds = i * pollInterval;
+          _gpsReadCount++;
+          
+          print('[BlockForm] 📡 GPS read #$_gpsReadCount (${_warmupSeconds}s)...');
+          
+          // Get current position with highest accuracy
+          // Use Google Fused Location (GPS + WiFi + Cell) for best static position
+          final position = await Geolocator.getCurrentPosition(
+            desiredAccuracy: LocationAccuracy.best, // Highest accuracy for static points
+            forceAndroidLocationManager: false, // Use Google Fused Location Provider
+            timeLimit: Duration(seconds: pollInterval + 1),
+          );
+          
+          final accuracy = position.accuracy;
+          
+          // Filter extreme outliers (GPS temporary loss/spike)
+          if (accuracy > 50.0) {
+            print('[BlockForm] 🚫 Outlier rejected: ${accuracy.toStringAsFixed(1)}m');
+            continue; // Skip this reading
+          }
+          
+          _accuracyHistory.add(accuracy);
+          
+          print('[BlockForm] 📍 Accuracy: ${accuracy.toStringAsFixed(1)}m');
+          
+          // Track best position
+          if (accuracy < _bestAccuracy) {
+            _bestAccuracy = accuracy;
+            _bestPosition = position;
+            print('[BlockForm] ✨ New best accuracy: ${accuracy.toStringAsFixed(1)}m');
+          }
+          
+          // Update UI
+          if (mounted) {
+            setState(() {
+              _currentPosition = _bestPosition;
+            });
+          }
+          
+          // Early exit if excellent accuracy achieved
+          if (accuracy <= targetAccuracy) {
+            print('[BlockForm] ✅ Target accuracy reached: ${accuracy.toStringAsFixed(1)}m');
+            break;
+          }
+          
+          // Wait before next poll (except last iteration)
+          if (i < (maxDuration / pollInterval) - 1) {
+            await Future.delayed(Duration(seconds: pollInterval));
+          }
+          
+        } catch (e) {
+          print('[BlockForm] ⚠️ GPS read failed: $e');
+          // Continue trying
+        }
       }
+      
+      // Use best position obtained
+      if (_bestPosition != null) {
+        print('[BlockForm] 🎯 GPS warm-up complete!');
+        print('[BlockForm] Best accuracy: ${_bestAccuracy.toStringAsFixed(1)}m from $_gpsReadCount reads');
+        
+        setState(() {
+          _currentPosition = _bestPosition;
+          _latController.text = _bestPosition!.latitude.toStringAsFixed(8);
+          _lngController.text = _bestPosition!.longitude.toStringAsFixed(8);
+          _isGettingGPS = false;
+          _isWarmingUp = false;
+        });
+
+        // Show result based on accuracy achieved
+        if (_bestAccuracy <= 5) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                '✅ GPS Optimal!\n'
+                'Akurasi: ${_bestAccuracy.toStringAsFixed(1)}m (Excellent)\n'
+                'Reads: $_gpsReadCount dalam ${_warmupSeconds}s',
+              ),
+              backgroundColor: AppColors.success,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        } else if (_bestAccuracy <= 10) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                '✅ GPS Berhasil\n'
+                'Akurasi: ${_bestAccuracy.toStringAsFixed(1)}m (Good)\n'
+                'Reads: $_gpsReadCount dalam ${_warmupSeconds}s',
+              ),
+              backgroundColor: AppColors.success,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        } else if (_bestAccuracy <= 20) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                '⚠️ GPS Cukup\n'
+                'Akurasi: ${_bestAccuracy.toStringAsFixed(1)}m (Fair)\n'
+                'Tip: Tunggu lebih lama atau pindah ke area lebih terbuka',
+              ),
+              backgroundColor: AppColors.warning,
+              duration: const Duration(seconds: 4),
+              action: SnackBarAction(
+                label: 'COBA LAGI',
+                textColor: Colors.white,
+                onPressed: _getCurrentLocation,
+              ),
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                '⚠️ Akurasi Rendah\n'
+                'Akurasi: ${_bestAccuracy.toStringAsFixed(1)}m (Poor)\n\n'
+                'Untuk hasil terbaik:\n'
+                '• Pindah ke area terbuka\n'
+                '• Pastikan langit terlihat\n'
+                '• Tunggu lebih lama (1-2 menit)\n'
+                '• Aktifkan "High Accuracy" di pengaturan',
+              ),
+              backgroundColor: AppColors.error,
+              duration: const Duration(seconds: 8),
+              action: SnackBarAction(
+                label: 'COBA LAGI',
+                textColor: Colors.white,
+                onPressed: _getCurrentLocation,
+              ),
+            ),
+          );
+        }
+      } else {
+        throw Exception('Tidak dapat mendapatkan posisi GPS');
+      }
+      
     } catch (e) {
       print('[BlockForm] GPS error: $e');
       setState(() {
         _isGettingGPS = false;
+        _isWarmingUp = false;
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -573,7 +672,9 @@ class _BlockFormScreenState extends State<BlockFormScreen> {
                     children: [
                       Text(
                         _isGettingGPS
-                            ? 'Mencari sinyal GPS...'
+                            ? (_isWarmingUp 
+                                ? '🛰️ Warming up GPS... (${_warmupSeconds}s)'
+                                : 'Mencari sinyal GPS...')
                             : 'Gunakan Lokasi GPS Saat Ini',
                         style: TextStyle(
                           fontSize: 16,
@@ -586,7 +687,9 @@ class _BlockFormScreenState extends State<BlockFormScreen> {
                       const SizedBox(height: 4),
                       Text(
                         _isGettingGPS
-                            ? 'Menghubungi satelit GPS...'
+                            ? (_isWarmingUp
+                                ? 'Reads: $_gpsReadCount | Best: ${_bestAccuracy == double.infinity ? "--" : "${_bestAccuracy.toStringAsFixed(1)}m"}'
+                                : 'Menghubungi satelit GPS...')
                             : _currentPosition != null
                                 ? 'GPS terdeteksi • Akurasi ${_currentPosition!.accuracy.toStringAsFixed(1)}m'
                                 : 'Pastikan GPS aktif dan Anda berada di lokasi blok',
@@ -623,29 +726,40 @@ class _BlockFormScreenState extends State<BlockFormScreen> {
     String description;
     IconData icon;
 
+    // Calculate accuracy improvement if history available
+    String improvementText = '';
+    if (_accuracyHistory.length >= 2) {
+      final first = _accuracyHistory.first;
+      final last = _accuracyHistory.last;
+      final improvement = first - last;
+      if (improvement > 1) {
+        improvementText = ' (Improved ${improvement.toStringAsFixed(1)}m from ${_gpsReadCount} reads)';
+      }
+    }
+
     if (accuracy <= 5) {
       color = isDark ? AppColors.successDark : AppColors.success;
       label = 'Akurasi Sangat Baik';
       description =
-          'GPS accuracy: ${accuracy.toStringAsFixed(1)}m - Ideal untuk patrol geofencing 5m';
+          'GPS accuracy: ${accuracy.toStringAsFixed(1)}m - Ideal untuk patrol geofencing 5m$improvementText';
       icon = Icons.check_circle;
     } else if (accuracy <= 10) {
       color = isDark ? AppColors.infoDark : AppColors.info;
       label = 'Akurasi Baik';
       description =
-          'GPS accuracy: ${accuracy.toStringAsFixed(1)}m - Cocok untuk patrol (toleransi 2x radius)';
+          'GPS accuracy: ${accuracy.toStringAsFixed(1)}m - Cocok untuk patrol$improvementText';
       icon = Icons.check_circle_outline;
     } else if (accuracy <= 20) {
       color = isDark ? AppColors.warningDark : AppColors.warning;
       label = 'Akurasi Cukup';
       description =
-          'GPS accuracy: ${accuracy.toStringAsFixed(1)}m - Minimal untuk patrol (toleransi 4x radius)';
+          'GPS accuracy: ${accuracy.toStringAsFixed(1)}m - Minimal untuk patrol$improvementText';
       icon = Icons.warning_amber;
     } else {
       color = isDark ? AppColors.errorDark : AppColors.error;
       label = 'Akurasi Rendah - TIDAK DISARANKAN';
       description =
-          'GPS accuracy: ${accuracy.toStringAsFixed(1)}m - Terlalu tidak akurat untuk patrol! Pindah ke area terbuka.';
+          'GPS accuracy: ${accuracy.toStringAsFixed(1)}m - Terlalu tidak akurat untuk patrol! Pindah ke area terbuka.$improvementText';
       icon = Icons.error_outline;
     }
 

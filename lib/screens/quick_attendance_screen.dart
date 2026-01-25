@@ -137,10 +137,12 @@ class _QuickAttendanceScreenState extends State<QuickAttendanceScreen> {
         orElse: () => cameras.first,
       );
 
+      // Optimize for Redmi Note 13 Pro 16MP front camera
       _cameraController = CameraController(
         frontCamera,
-        ResolutionPreset.high,
+        ResolutionPreset.veryHigh, // Leverage 16MP sensor for best face detail
         enableAudio: false,
+        imageFormatGroup: ImageFormatGroup.jpeg, // Optimized compression
       );
 
       await _cameraController!.initialize();

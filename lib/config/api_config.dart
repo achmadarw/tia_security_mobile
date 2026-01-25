@@ -1,7 +1,9 @@
 class ApiConfig {
   // Base URL - change this to your backend URL
-  static const String baseUrl = 'http://192.168.18.20:3008/api';
-  static const String serverUrl = 'http://192.168.18.20:3008'; // Without /api
+  static const String baseUrl =
+      'https://tiasecuritybackend-production.up.railway.app/api';
+  static const String serverUrl =
+      'https://tiasecuritybackend-production.up.railway.app'; // Without /api
 
   // Auth endpoints
   static const String authLogin = '/auth/login';

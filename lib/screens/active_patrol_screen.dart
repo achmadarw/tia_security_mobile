@@ -1,8 +1,13 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:camera/camera.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as path;
 import '../config/theme.dart';
 import '../services/patrol_service.dart';
 import '../services/gps_tracking_service.dart';
@@ -43,10 +48,77 @@ class _ActivePatrolScreenState extends State<ActivePatrolScreen> {
   bool _isLoading = true;
   String? _errorMessage;
 
+  // Motor patrol optimizations
+  double _currentSpeed = 0.0; // km/h
+  double _smoothedDistance = 0.0; // For distance smoothing
+  final List<double> _recentSpeeds =
+      []; // For speed smoothing (last 3 readings)
+  final Set<String> _notifiedBlocks =
+      {}; // Track which blocks we've alerted for
+  int _gpsAccuracy = 0; // meters
+  String _gpsQuality = 'Mencari GPS...'; // Excellent/Good/Poor
+  Color _gpsQualityColor = Colors.grey;
+
+  // GPS Loss Detection
+  int _gpsLossSeconds = 0;
+  Timer? _gpsHealthTimer;
+  DateTime? _lastGpsUpdate;
+  bool _showGpsLossWarning = false;
+
+  // Manual Check-in
+  List<CameraDescription>? _cameras;
+  final Map<String, String> _manualCheckIns = {}; // blockName -> photoPath
+
   @override
   void initState() {
     super.initState();
     _initializePatrol();
+    _initializeCamera();
+    _startGpsHealthMonitoring();
+  }
+
+  Future<void> _initializeCamera() async {
+    try {
+      _cameras = await availableCameras();
+      print('[ActivePatrol] 📷 ${_cameras?.length ?? 0} cameras available');
+    } catch (e) {
+      print('[ActivePatrol] ⚠️ Camera initialization error: $e');
+    }
+  }
+
+  void _startGpsHealthMonitoring() {
+    // Monitor GPS health every second
+    _gpsHealthTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+
+      final now = DateTime.now();
+
+      // Check if GPS is healthy (recent update within 5 seconds)
+      if (_lastGpsUpdate == null ||
+          now.difference(_lastGpsUpdate!) > const Duration(seconds: 5)) {
+        _gpsLossSeconds++;
+
+        // Show warning after 30 seconds
+        if (_gpsLossSeconds == 30 && !_showGpsLossWarning) {
+          setState(() => _showGpsLossWarning = true);
+          _showGpsLossWarningSnackbar();
+        }
+
+        // Show critical dialog after 2 minutes
+        if (_gpsLossSeconds == 120) {
+          _showGpsLossCriticalDialog();
+        }
+      } else {
+        // GPS recovered
+        if (_gpsLossSeconds > 0) {
+          print('[ActivePatrol] ✅ GPS recovered after ${_gpsLossSeconds}s');
+        }
+        _gpsLossSeconds = 0;
+        if (_showGpsLossWarning) {
+          setState(() => _showGpsLossWarning = false);
+        }
+      }
+    });
   }
 
   Future<void> _initializePatrol() async {
@@ -56,8 +128,10 @@ class _ActivePatrolScreenState extends State<ActivePatrolScreen> {
       print('[ActivePatrol] 🚀 Starting initialization...');
       final startTime = DateTime.now();
 
-      // Load current patrol session (this will also fetch and setup blocks if needed)
-      await _patrolService.loadCurrentSession();
+      // Load current patrol session with FRESH blocks from API
+      // forceFreshBlocks=true ensures we get latest block coordinates (not cached)
+      // This is critical when admin just updated block coordinates before patrol start
+      await _patrolService.loadCurrentSession(forceFreshBlocks: true);
       _currentSession = _patrolService.currentSession;
 
       if (_currentSession == null) {
@@ -116,7 +190,37 @@ class _ActivePatrolScreenState extends State<ActivePatrolScreen> {
   }
 
   void _updatePosition(Position position) {
+    // Track GPS health
+    _lastGpsUpdate = DateTime.now();
+
     setState(() {
+      // Calculate speed from position (m/s -> km/h)
+      double speedKmh = position.speed * 3.6;
+
+      // Smooth speed using moving average (last 3 readings)
+      _recentSpeeds.add(speedKmh);
+      if (_recentSpeeds.length > 3) {
+        _recentSpeeds.removeAt(0);
+      }
+      _currentSpeed =
+          _recentSpeeds.reduce((a, b) => a + b) / _recentSpeeds.length;
+
+      // Update GPS quality indicator
+      _gpsAccuracy = position.accuracy.round();
+      if (position.accuracy <= 5) {
+        _gpsQuality = 'Excellent';
+        _gpsQualityColor = Colors.green;
+      } else if (position.accuracy <= 10) {
+        _gpsQuality = 'Good';
+        _gpsQualityColor = Colors.blue;
+      } else if (position.accuracy <= 20) {
+        _gpsQuality = 'Fair';
+        _gpsQualityColor = Colors.orange;
+      } else {
+        _gpsQuality = 'Poor';
+        _gpsQualityColor = Colors.red;
+      }
+
       _currentPosition = position;
 
       // Update marker
@@ -158,6 +262,9 @@ class _ActivePatrolScreenState extends State<ActivePatrolScreen> {
     // Update geofencing with current position
     _geofencingService.updatePosition(position);
 
+    // Check proximity alerts for checkpoints (<20m)
+    _checkProximityAlerts();
+
     // Log distance to all blocks for verification
     for (var zone in _geofencingService.zones) {
       final dist = Geolocator.distanceBetween(
@@ -168,6 +275,57 @@ class _ActivePatrolScreenState extends State<ActivePatrolScreen> {
       );
       print(
           '[ActivePatrol] 📍 Distance to ${zone.name}: ${dist.toStringAsFixed(1)}m (threshold: ${zone.radiusMeters}m)');
+    }
+  }
+
+  /// Check proximity to checkpoints and trigger vibration/alert
+  void _checkProximityAlerts() {
+    if (_currentPosition == null) return;
+
+    for (var zone in _geofencingService.zones) {
+      // Skip if already visited or already notified
+      if (_visitedBlockNames.contains(zone.name) ||
+          _notifiedBlocks.contains(zone.name)) {
+        continue;
+      }
+
+      final distance = Geolocator.distanceBetween(
+        _currentPosition!.latitude,
+        _currentPosition!.longitude,
+        zone.latitude,
+        zone.longitude,
+      );
+
+      // Alert when within 20 meters
+      if (distance <= 20) {
+        _notifiedBlocks.add(zone.name);
+
+        // Vibrate
+        HapticFeedback.mediumImpact();
+
+        // Show snackbar notification
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.location_on, color: Colors.white, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text('📍 Mendekati checkpoint: ${zone.name}'),
+                  ),
+                ],
+              ),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 2),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+
+        print(
+            '[ActivePatrol] 🔔 Proximity alert: ${zone.name} at ${distance.toStringAsFixed(1)}m');
+      }
     }
   }
 
@@ -338,8 +496,181 @@ class _ActivePatrolScreenState extends State<ActivePatrolScreen> {
     _positionSubscription?.cancel();
     _geofenceSubscription?.cancel();
     _durationTimer?.cancel();
+    _gpsHealthTimer?.cancel();
     _mapController?.dispose();
     super.dispose();
+  }
+
+  /// GPS Loss Warning - Show snackbar after 30s
+  void _showGpsLossWarningSnackbar() {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.gps_off, color: Colors.white, size: 20),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                '⚠️ Sinyal GPS hilang. Pastikan Anda di area terbuka.',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: Colors.orange.shade700,
+        duration: const Duration(seconds: 5),
+        behavior: SnackBarBehavior.floating,
+        action: SnackBarAction(
+          label: 'OK',
+          textColor: Colors.white,
+          onPressed: () {},
+        ),
+      ),
+    );
+
+    // Vibrate
+    HapticFeedback.heavyImpact();
+
+    print('[ActivePatrol] 🚨 GPS loss warning shown after ${_gpsLossSeconds}s');
+  }
+
+  /// GPS Loss Critical Dialog - Show after 2 minutes
+  void _showGpsLossCriticalDialog() {
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.gps_off, color: Colors.red.shade700, size: 32),
+            const SizedBox(width: 12),
+            const Text('GPS Bermasalah'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Sinyal GPS hilang selama ${(_gpsLossSeconds / 60).toStringAsFixed(0)} menit.',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
+            const Text('Saran:'),
+            const SizedBox(height: 8),
+            const Text('• Pastikan GPS aktif di pengaturan'),
+            const Text('• Pindah ke area terbuka'),
+            const Text('• Restart aplikasi jika perlu'),
+            const Text('• Gunakan Check-in Manual dengan foto'),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue.shade200),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline,
+                      color: Colors.blue.shade700, size: 20),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Checkpoint detection otomatis tidak akan bekerja tanpa GPS.',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Mengerti'),
+          ),
+        ],
+      ),
+    );
+
+    print(
+        '[ActivePatrol] 🆘 GPS loss CRITICAL dialog shown after ${_gpsLossSeconds}s');
+  }
+
+  /// Manual Check-in - Take photo as proof
+  Future<void> _manualCheckIn(String blockName) async {
+    if (_cameras == null || _cameras!.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('❌ Kamera tidak tersedia'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    try {
+      // Navigate to camera screen
+      final XFile? photo = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => _ManualCheckInCamera(
+            camera: _cameras!.first,
+            blockName: blockName,
+          ),
+        ),
+      );
+
+      if (photo != null) {
+        // Save photo path
+        setState(() {
+          _manualCheckIns[blockName] = photo.path;
+
+          // Mark as visited
+          if (!_visitedBlockNames.contains(blockName)) {
+            _visitedBlockNames.add(blockName);
+            _visitedBlocks = _visitedBlockNames.length;
+          }
+        });
+
+        // Show success
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.check_circle, color: Colors.white, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text('✅ Check-in manual: $blockName')),
+                ],
+              ),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+
+          HapticFeedback.mediumImpact();
+        }
+
+        print('[ActivePatrol] 📸 Manual check-in: $blockName at ${photo.path}');
+      }
+    } catch (e) {
+      print('[ActivePatrol] ❌ Manual check-in error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -384,8 +715,51 @@ class _ActivePatrolScreenState extends State<ActivePatrolScreen> {
       body: SafeArea(
         child: Column(
           children: [
+            // GPS Loss Warning Banner (if GPS lost > 30s)
+            if (_showGpsLossWarning)
+              Container(
+                width: double.infinity,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  border: Border(
+                    bottom: BorderSide(color: Colors.red.shade300, width: 2),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.gps_off, color: Colors.red.shade700, size: 24),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '⚠️ GPS TIDAK TERDETEKSI (${_gpsLossSeconds}s)',
+                            style: TextStyle(
+                              color: Colors.red.shade900,
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Checkpoint tidak akan terdeteksi otomatis. Gunakan Check-in Manual.',
+                            style: TextStyle(
+                              color: Colors.red.shade800,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
             // GPS Status Banner (jika belum ready)
-            if (_currentPosition == null)
+            if (_currentPosition == null && !_showGpsLossWarning)
               Container(
                 width: double.infinity,
                 padding:
@@ -480,17 +854,17 @@ class _ActivePatrolScreenState extends State<ActivePatrolScreen> {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
-                  color: Colors.green.withOpacity(0.2),
+                  color: _gpsQualityColor.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(20),
                 ),
-                child: const Row(
+                child: Row(
                   children: [
-                    Icon(Icons.gps_fixed, color: Colors.green, size: 16),
-                    SizedBox(width: 4),
+                    Icon(Icons.gps_fixed, color: _gpsQualityColor, size: 16),
+                    const SizedBox(width: 4),
                     Text(
-                      'Aktif',
+                      _gpsQuality,
                       style: TextStyle(
-                        color: Colors.green,
+                        color: _gpsQualityColor,
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
                       ),
@@ -500,6 +874,83 @@ class _ActivePatrolScreenState extends State<ActivePatrolScreen> {
               ),
             ],
           ),
+
+          // Speed & GPS Accuracy Row
+          if (_currentPosition != null) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                // Speed indicator
+                Expanded(
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? Colors.blue.shade900.withOpacity(0.3)
+                          : Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.speed,
+                          size: 16,
+                          color: isDark
+                              ? Colors.blue.shade300
+                              : Colors.blue.shade700,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          '${_currentSpeed.toStringAsFixed(1)} km/h',
+                          style: TextStyle(
+                            color: isDark
+                                ? Colors.blue.shade300
+                                : Colors.blue.shade700,
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                // GPS Accuracy
+                Expanded(
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: _gpsQualityColor.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.my_location,
+                          size: 16,
+                          color: _gpsQualityColor,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          '±${_gpsAccuracy}m',
+                          style: TextStyle(
+                            color: _gpsQualityColor,
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+
           const SizedBox(height: 16),
           Row(
             children: [
@@ -792,51 +1243,102 @@ class _ActivePatrolScreenState extends State<ActivePatrolScreen> {
                             : AppColors.textSecondary,
                       ),
                       const SizedBox(width: 4),
-                      Row(
-                        children: [
-                          if (distance == null) ...[
-                            // GPS belum ready - show loading indicator
-                            SizedBox(
-                              width: 12,
-                              height: 12,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                  isDark ? Colors.blue.shade300 : Colors.blue,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                          ],
-                          Text(
-                            distance != null
-                                ? distance < 1000
-                                    ? '${distance.toStringAsFixed(0)} m'
-                                    : '${(distance / 1000).toStringAsFixed(2)} km'
-                                : 'Mencari GPS...',
-                            style: TextStyle(
-                              color: isDark
-                                  ? AppColors.darkTextSecondary
-                                  : AppColors.textSecondary,
-                              fontSize: 12,
-                              fontStyle: distance == null
-                                  ? FontStyle.italic
-                                  : FontStyle.normal,
+                      // Checkpoint-focused UX: Only show distance when meaningful (<50m)
+                      // For motor patrol, hide far distances to reduce clutter
+                      if (distance == null) ...[
+                        // GPS belum ready - show loading indicator
+                        SizedBox(
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              isDark ? Colors.blue.shade300 : Colors.blue,
                             ),
                           ),
-                        ],
-                      ),
-                      if (isVisited) ...[
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Mencari GPS...',
+                          style: TextStyle(
+                            color: isDark
+                                ? AppColors.darkTextSecondary
+                                : AppColors.textSecondary,
+                            fontSize: 12,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ] else if (distance > 50) ...[
+                        // Far away - just show direction indicator
+                        Text(
+                          'Sedang menuju...',
+                          style: TextStyle(
+                            color: isDark
+                                ? AppColors.darkTextSecondary
+                                : AppColors.textSecondary,
+                            fontSize: 12,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ] else ...[
+                        // Close enough (<50m) - show animated distance
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 300),
+                          transitionBuilder: (child, animation) {
+                            return FadeTransition(
+                              opacity: animation,
+                              child: ScaleTransition(
+                                scale: animation,
+                                child: child,
+                              ),
+                            );
+                          },
+                          child: Row(
+                            key: ValueKey<int>(distance.round()),
+                            children: [
+                              // Proximity warning for <20m
+                              if (distance <= 20) ...[
+                                Icon(
+                                  Icons.notifications_active,
+                                  size: 14,
+                                  color: Colors.orange,
+                                ),
+                                const SizedBox(width: 4),
+                              ],
+                              Text(
+                                '${distance.toStringAsFixed(0)} m',
+                                style: TextStyle(
+                                  color: distance <= 20
+                                      ? Colors.orange
+                                      : (isDark
+                                          ? AppColors.darkTextSecondary
+                                          : AppColors.textSecondary),
+                                  fontSize: 12,
+                                  fontWeight: distance <= 20
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                      if (isVisited ||
+                          _manualCheckIns.containsKey(zone.name)) ...[
                         const SizedBox(width: 12),
                         Icon(
-                          Icons.check_circle,
+                          _manualCheckIns.containsKey(zone.name)
+                              ? Icons.camera_alt
+                              : Icons.check_circle,
                           size: 14,
                           color: Colors.green,
                         ),
                         const SizedBox(width: 4),
-                        const Text(
-                          'Dikunjungi',
-                          style: TextStyle(
+                        Text(
+                          _manualCheckIns.containsKey(zone.name)
+                              ? 'Check-in Manual'
+                              : 'Dikunjungi',
+                          style: const TextStyle(
                             color: Colors.green,
                             fontSize: 12,
                             fontWeight: FontWeight.w500,
@@ -845,6 +1347,32 @@ class _ActivePatrolScreenState extends State<ActivePatrolScreen> {
                       ],
                     ],
                   ),
+
+                  // Manual Check-in button (show if GPS poor or not visited)
+                  if (!isVisited &&
+                      !_manualCheckIns.containsKey(zone.name) &&
+                      (_gpsQuality == 'Poor' || _showGpsLossWarning)) ...[
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () => _manualCheckIn(zone.name),
+                        icon: const Icon(Icons.camera_alt, size: 16),
+                        label: const Text(
+                          'Check-in Manual',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.orange,
+                          side: BorderSide(color: Colors.orange.shade300),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -945,5 +1473,197 @@ class _ActivePatrolScreenState extends State<ActivePatrolScreen> {
     } else {
       return '${seconds}d';
     }
+  }
+}
+
+/// Manual Check-in Camera Screen
+class _ManualCheckInCamera extends StatefulWidget {
+  final CameraDescription camera;
+  final String blockName;
+
+  const _ManualCheckInCamera({
+    required this.camera,
+    required this.blockName,
+  });
+
+  @override
+  State<_ManualCheckInCamera> createState() => _ManualCheckInCameraState();
+}
+
+class _ManualCheckInCameraState extends State<_ManualCheckInCamera> {
+  CameraController? _controller;
+  Future<void>? _initializeControllerFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = CameraController(
+      widget.camera,
+      ResolutionPreset.high,
+    );
+    _initializeControllerFuture = _controller!.initialize();
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _takePicture() async {
+    try {
+      await _initializeControllerFuture;
+      final XFile photo = await _controller!.takePicture();
+
+      if (mounted) {
+        Navigator.pop(context, photo);
+      }
+    } catch (e) {
+      print('[ManualCheckIn] Error taking picture: $e');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: FutureBuilder<void>(
+        future: _initializeControllerFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.done) {
+            return Stack(
+              children: [
+                // Camera preview
+                Positioned.fill(
+                  child: CameraPreview(_controller!),
+                ),
+
+                // Header
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: SafeArea(
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.black.withOpacity(0.7),
+                            Colors.transparent,
+                          ],
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          IconButton(
+                            onPressed: () => Navigator.pop(context),
+                            icon: const Icon(Icons.close, color: Colors.white),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Check-in Manual',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                Text(
+                                  widget.blockName,
+                                  style: TextStyle(
+                                    color: Colors.white.withOpacity(0.8),
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+
+                // Instructions overlay
+                Positioned(
+                  bottom: 150,
+                  left: 0,
+                  right: 0,
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 32),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.6),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Column(
+                      children: [
+                        Icon(Icons.photo_camera, color: Colors.white, size: 32),
+                        SizedBox(height: 8),
+                        Text(
+                          'Ambil foto checkpoint sebagai bukti kunjungan',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // Capture button
+                Positioned(
+                  bottom: 32,
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    child: GestureDetector(
+                      onTap: _takePicture,
+                      child: Container(
+                        width: 80,
+                        height: 80,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Colors.white,
+                          border: Border.all(
+                            color: Colors.white,
+                            width: 4,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.3),
+                              blurRadius: 8,
+                              spreadRadius: 2,
+                            ),
+                          ],
+                        ),
+                        child: Icon(
+                          Icons.camera_alt,
+                          color: Colors.blue.shade700,
+                          size: 40,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          } else {
+            return const Center(
+              child: CircularProgressIndicator(color: Colors.white),
+            );
+          }
+        },
+      ),
+    );
   }
 }

@@ -18,8 +18,8 @@ class GPSTrackingService {
   // GPS filtering thresholds
   static const double _maxAccuracyMeters = 20.0; // Reject accuracy > 20m
   static const double _maxSpeedKmh =
-      30.0; // Reject speed > 30 km/h (sprint speed)
-  static const double _maxJumpMeters = 100.0; // Reject jumps > 100m in 1 second
+      60.0; // Reject speed > 60 km/h (motor patrol speed in residential: ~20-50 km/h)
+  static const double _maxJumpMeters = 150.0; // Reject jumps > 150m in 1 second (adjusted for motor)
 
   /// Get stream of position updates
   Stream<Position>? get positionStream => _positionController?.stream;
@@ -83,13 +83,17 @@ class GPSTrackingService {
       _positionController = StreamController<Position>.broadcast();
       _isTracking = true;
 
-      // Configure location settings for high accuracy
+      // Configure location settings for MAXIMUM sensitivity (patrol tracking)
+      // distanceFilter = 0 means update every second even with small movements
+      // Trade-off: More battery drain, but essential for real-time patrol monitoring
       const LocationSettings locationSettings = LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 5, // Minimum 5 meters movement to trigger update
+        accuracy: LocationAccuracy
+            .bestForNavigation, // Highest accuracy for navigation
+        distanceFilter: 0, // Update on ANY movement (even 1-2 meters)
       );
 
-      print('[GPS] Starting GPS tracking with ${intervalSeconds}s interval');
+      print(
+          '[GPS] Starting GPS tracking with ${intervalSeconds}s interval (distanceFilter=0 for sensitive tracking)');
 
       // Start listening to position stream
       _positionSubscription = Geolocator.getPositionStream(
@@ -251,14 +255,14 @@ class GPSTrackingService {
     // 5. Calculate speed in km/h
     double speedKmh = (distance / timeDiff) * 3.6;
 
-    // 6. Check for unrealistic speed (> 30 km/h = sprint speed)
+    // 6. Check for unrealistic speed (> 60 km/h = motor in residential area)
     if (speedKmh > _maxSpeedKmh) {
       print(
           '[GPS Filter] Rejected: Speed too high ${speedKmh.toStringAsFixed(1)} km/h (max ${_maxSpeedKmh} km/h)');
       return false;
     }
 
-    // 7. Check for sudden jumps (> 100m in 1 second)
+    // 7. Check for sudden jumps (> 150m in 1 second, adjusted for motor patrol)
     double maxDistance = _maxJumpMeters * timeDiff;
     if (distance > maxDistance) {
       print(

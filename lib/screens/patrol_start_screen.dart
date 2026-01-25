@@ -103,11 +103,13 @@ class _PatrolStartScreenState extends State<PatrolStartScreen> {
         orElse: () => _cameras!.first,
       );
 
+      // Optimize for Redmi Note 13 Pro 16MP front camera
       _cameraController = CameraController(
         frontCamera,
-        ResolutionPreset.medium,
+        ResolutionPreset.veryHigh, // Leverage 16MP for best face detail
         enableAudio: false,
-        imageFormatGroup: ImageFormatGroup.yuv420,
+        imageFormatGroup:
+            ImageFormatGroup.jpeg, // Better quality, hardware accelerated
       );
 
       await _cameraController!.initialize();
